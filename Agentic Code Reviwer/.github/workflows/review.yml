@@ -1,0 +1,45 @@
+name: PR Sage Autonomous Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    name: Multi-Step Agentic Review
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Local Ollama Service
+        shell: bash
+        run: |
+          echo "Checking local Ollama connectivity at ${OLLAMA_BASE_URL:-http://localhost:11434}..."
+          curl -s --fail "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" || {
+            echo "ERROR: Local Ollama service is not running. Please start Ollama before triggering reviews."
+            exit 1
+          }
+
+      - name: Execute PR Sage Agentic Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'http://localhost:11434' }}
+          REPO: ${{ github.repository }}
+        run: |
+          python -m agent --pr-number ${{ github.event.pull_request.number }}
