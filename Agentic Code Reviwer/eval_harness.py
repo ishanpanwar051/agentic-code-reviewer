@@ -187,7 +187,8 @@ def run_evaluation(
     settings = Settings(DRY_RUN=True)
     llm = LLMClient(
         model=settings.MODEL_NAME,
-        base_url=settings.OLLAMA_BASE_URL,
+        api_key=settings.GROQ_API_KEY,
+        base_url=settings.GROQ_BASE_URL,
         timeout=settings.REQUEST_TIMEOUT,
     )
 

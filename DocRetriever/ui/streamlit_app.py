@@ -65,7 +65,7 @@ with st.sidebar:
         if health_resp.status_code == 200:
             h_data = health_resp.json()
             st.success(f"Backend: **{h_data.get('status', 'ok').upper()}**")
-            st.caption(f"PostgreSQL: `{h_data.get('postgres')}` | Ollama: `{h_data.get('ollama')}`")
+            st.caption(f"PostgreSQL: `{h_data.get('postgres')}` | Groq API: `{h_data.get('groq_api')}`")
             st.caption(f"Corpus Files: `{h_data.get('corpus_files')}` Markdown docs")
         else:
             st.warning("Backend degraded")

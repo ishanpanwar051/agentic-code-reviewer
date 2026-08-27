@@ -46,13 +46,13 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default="",
-        help="Override Ollama LLM model name (defaults to Settings.MODEL_NAME).",
+        help="Override Groq LLM model name (defaults to Settings.MODEL_NAME).",
     )
     parser.add_argument(
         "--base-url",
         type=str,
         default="",
-        help="Override Ollama base URL (defaults to Settings.OLLAMA_BASE_URL).",
+        help="Override Groq base URL (defaults to Settings.GROQ_BASE_URL).",
     )
     return parser.parse_args(args)
 
@@ -69,7 +69,7 @@ def main(args: list[str] | None = None) -> int:
     if parsed_args.model:
         overrides["MODEL_NAME"] = parsed_args.model
     if parsed_args.base_url:
-        overrides["OLLAMA_BASE_URL"] = parsed_args.base_url
+        overrides["GROQ_BASE_URL"] = parsed_args.base_url
     if parsed_args.repo and "/" in parsed_args.repo:
         overrides["REPO"] = parsed_args.repo
 
@@ -82,7 +82,8 @@ def main(args: list[str] | None = None) -> int:
     )
     llm = LLMClient(
         model=settings.MODEL_NAME,
-        base_url=settings.OLLAMA_BASE_URL,
+        api_key=settings.GROQ_API_KEY,
+        base_url=settings.GROQ_BASE_URL,
         timeout=settings.REQUEST_TIMEOUT,
         max_retries=settings.MAX_RETRIES,
     )

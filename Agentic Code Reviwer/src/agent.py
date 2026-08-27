@@ -78,7 +78,8 @@ class PRSageAgent:
         self.github = github or GitHubClient(token=self.settings.GITHUB_TOKEN)
         self.llm = llm or LLMClient(
             model=self.settings.MODEL_NAME,
-            base_url=self.settings.OLLAMA_BASE_URL,
+            api_key=self.settings.GROQ_API_KEY,
+            base_url=self.settings.GROQ_BASE_URL,
             timeout=self.settings.REQUEST_TIMEOUT,
             max_retries=self.settings.MAX_RETRIES,
         )

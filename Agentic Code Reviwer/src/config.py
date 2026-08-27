@@ -43,14 +43,18 @@ class Settings(BaseSettings):
         description="Target GitHub repository in 'owner/repo' format.",
     )
 
-    # Local LLM Inference (Ollama)
-    OLLAMA_BASE_URL: str = Field(
-        default="http://localhost:11434",
-        description="Local Ollama server API endpoint.",
+    # LLM Inference (Groq Cloud API)
+    GROQ_API_KEY: str = Field(
+        default="",
+        description="Groq API key for cloud LLM inference (free tier available).",
+    )
+    GROQ_BASE_URL: str = Field(
+        default="https://api.groq.com/openai/v1",
+        description="Groq API base URL (OpenAI-compatible endpoint).",
     )
     MODEL_NAME: str = Field(
-        default="llama3.2:3b",
-        description="LLM model tag to pull/run locally on 8GB RAM host.",
+        default="llama-3.1-8b-instant",
+        description="Groq model name for code review inference.",
     )
 
     # Guardrails: Noise & Rate Control

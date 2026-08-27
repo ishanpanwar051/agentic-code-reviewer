@@ -8,8 +8,8 @@ from src.config import Settings, get_settings, should_skip_path
 def test_default_settings():
     """Verifies default settings in DRY_RUN mode."""
     cfg = Settings(DRY_RUN=True)
-    assert cfg.OLLAMA_BASE_URL == "http://localhost:11434"
-    assert cfg.MODEL_NAME == "llama3.2:3b"
+    assert cfg.GROQ_BASE_URL == "https://api.groq.com/openai/v1"
+    assert cfg.MODEL_NAME == "llama-3.1-8b-instant"
     assert cfg.MAX_COMMENTS_PER_PR == 10
     assert cfg.MAX_COMMENTS_PER_FILE == 5
     assert cfg.CHUNK_SIZE_LINES == 150
