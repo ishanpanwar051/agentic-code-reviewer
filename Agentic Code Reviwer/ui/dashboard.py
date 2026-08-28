@@ -711,34 +711,108 @@ elif "Custom" in review_mode:
     )
 
 elif "GitHub" in review_mode:
-    gh_col1, gh_col2 = st.columns([3, 1])
-    with gh_col1:
-        gh_repo = st.text_input("GitHub Repository (owner/repo)", value="ishanpanwar051/agentic-code-reviewer")
-    with gh_col2:
-        gh_pr = st.number_input("PR Number", min_value=1, value=1, step=1)
+    gh_type = st.radio("Fetch Target:", ["Pull Request (#)", "Latest Commit Diff", "Quick Live Examples"], horizontal=True, index=0)
     
-    gh_token = st.text_input("GitHub Personal Access Token (Optional for public repos)", type="password")
-    
-    fetch_btn = st.button("📥 Fetch PR Diff from GitHub")
-    if fetch_btn:
-        with st.spinner(f"Fetching diff for {gh_repo} #{gh_pr}..."):
-            try:
-                import httpx
-                headers = {"Accept": "application/vnd.github.v3.diff"}
-                if gh_token:
-                    headers["Authorization"] = f"token {gh_token}"
-                resp = httpx.get(f"https://api.github.com/repos/{gh_repo}/pulls/{gh_pr}", headers=headers, timeout=15.0)
-                if resp.is_success:
-                    target_code = resp.text
-                    active_filename = f"PR_{gh_pr}.diff"
-                    st.success(f"Successfully fetched diff ({len(target_code.splitlines())} lines)!")
-                else:
-                    st.error(f"GitHub API Error: {resp.status_code} - {resp.text}")
-                    target_code = PRESET_SNIPPETS["🔴 Vulnerable App (SQLi + Secret + Bare Except)"]
-            except Exception as e:
-                st.error(f"Failed to fetch PR: {e}")
-                target_code = PRESET_SNIPPETS["🔴 Vulnerable App (SQLi + Secret + Bare Except)"]
-    else:
+    if gh_type == "Quick Live Examples":
+        quick_example = st.selectbox(
+            "Select a real open-source PR to fetch instantly:",
+            [
+                "pallets/flask — PR #5000 (Flask framework)",
+                "psf/requests — PR #6000 (Python Requests)",
+                "tiangolo/fastapi — PR #10000 (FastAPI)",
+                "django/django — PR #17000 (Django Web Framework)"
+            ]
+        )
+        if st.button("📥 Load Selected Open-Source PR Diff", type="secondary"):
+            sample_repo, sample_pr = quick_example.split(" — PR #")[0], quick_example.split(" — PR #")[1].split(" ")[0]
+            with st.spinner(f"Fetching diff for {sample_repo} #{sample_pr}..."):
+                try:
+                    import httpx
+                    resp = httpx.get(
+                        f"https://api.github.com/repos/{sample_repo}/pulls/{sample_pr}",
+                        headers={"Accept": "application/vnd.github.v3.diff", "User-Agent": "PR-Sage-Agent"},
+                        timeout=15.0
+                    )
+                    if resp.is_success and resp.text.strip():
+                        target_code = resp.text
+                        active_filename = f"{sample_repo.replace('/', '_')}_PR_{sample_pr}.diff"
+                        st.session_state["fetched_diff"] = target_code
+                        st.session_state["fetched_filename"] = active_filename
+                        st.success(f"✓ Fetched real PR diff for {sample_repo} #{sample_pr} ({len(target_code.splitlines())} lines)!")
+                    else:
+                        st.error(f"GitHub API Error: {resp.status_code}")
+                except Exception as e:
+                    st.error(f"Failed to fetch: {e}")
+
+    elif gh_type == "Pull Request (#)":
+        gh_col1, gh_col2 = st.columns([3, 1])
+        with gh_col1:
+            gh_repo = st.text_input("GitHub Repository (owner/repo)", value="pallets/flask")
+        with gh_col2:
+            gh_pr = st.number_input("PR Number", min_value=1, value=5000, step=1)
+        
+        gh_token = st.text_input("GitHub Token (Optional, required for private repos)", type="password")
+        
+        fetch_btn = st.button("📥 Fetch PR Diff from GitHub")
+        if fetch_btn:
+            with st.spinner(f"Fetching PR #{gh_pr} from {gh_repo}..."):
+                try:
+                    import httpx
+                    headers = {"Accept": "application/vnd.github.v3.diff", "User-Agent": "PR-Sage-Agent"}
+                    if gh_token:
+                        headers["Authorization"] = f"Bearer {gh_token}"
+                    resp = httpx.get(f"https://api.github.com/repos/{gh_repo}/pulls/{gh_pr}", headers=headers, timeout=15.0)
+                    if resp.is_success and resp.text.strip():
+                        target_code = resp.text
+                        active_filename = f"PR_{gh_pr}.diff"
+                        st.session_state["fetched_diff"] = target_code
+                        st.session_state["fetched_filename"] = active_filename
+                        st.success(f"✓ Successfully fetched PR #{gh_pr} ({len(target_code.splitlines())} lines)!")
+                    elif resp.status_code == 404:
+                        st.error(f"❌ 404 Not Found: `{gh_repo}` par Pull Request `#{gh_pr}` create nahi hui hai.")
+                        st.info("💡 Tip: Agar aapne apni repo mein abhi tak Pull Request (PR) open nahi ki hai, toh 'Latest Commit Diff' select karein ya 'pallets/flask' PR #5000 test karein!")
+                    else:
+                        st.error(f"GitHub API Error: {resp.status_code} - {resp.text}")
+                except Exception as e:
+                    st.error(f"Failed to fetch PR: {e}")
+
+    elif gh_type == "Latest Commit Diff":
+        gh_repo_c = st.text_input("GitHub Repository (owner/repo)", value="ishanpanwar051/agentic-code-reviewer")
+        gh_token_c = st.text_input("GitHub Token (Optional)", type="password", key="token_commit")
+        
+        fetch_commit_btn = st.button("📥 Fetch Latest Commit Diff")
+        if fetch_commit_btn:
+            with st.spinner(f"Fetching latest commit from {gh_repo_c}..."):
+                try:
+                    import httpx
+                    headers = {"User-Agent": "PR-Sage-Agent"}
+                    if gh_token_c:
+                        headers["Authorization"] = f"Bearer {gh_token_c}"
+                    # 1. Get latest commit SHA
+                    c_resp = httpx.get(f"https://api.github.com/repos/{gh_repo_c}/commits", headers=headers, timeout=15.0)
+                    if c_resp.is_success and c_resp.json():
+                        latest_sha = c_resp.json()[0]["sha"]
+                        # 2. Get commit diff
+                        headers["Accept"] = "application/vnd.github.v3.diff"
+                        diff_resp = httpx.get(f"https://api.github.com/repos/{gh_repo_c}/commits/{latest_sha}", headers=headers, timeout=15.0)
+                        if diff_resp.is_success:
+                            target_code = diff_resp.text
+                            active_filename = f"commit_{latest_sha[:7]}.diff"
+                            st.session_state["fetched_diff"] = target_code
+                            st.session_state["fetched_filename"] = active_filename
+                            st.success(f"✓ Fetched latest commit `{latest_sha[:7]}` ({len(target_code.splitlines())} lines)!")
+                        else:
+                            st.error(f"Failed to fetch commit diff: {diff_resp.status_code}")
+                    else:
+                        st.error(f"Could not find commits for `{gh_repo_c}` (Status: {c_resp.status_code})")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    # Use fetched diff if present in session
+    if "fetched_diff" in st.session_state and st.session_state["fetched_diff"]:
+        target_code = st.session_state["fetched_diff"]
+        active_filename = st.session_state.get("fetched_filename", "github_diff.diff")
+    elif not target_code:
         target_code = PRESET_SNIPPETS["🔴 Vulnerable App (SQLi + Secret + Bare Except)"]
 
 # Primary Action Button
