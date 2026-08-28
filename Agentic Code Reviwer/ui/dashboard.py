@@ -26,10 +26,14 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except Exception:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
 
 EVAL_REPORT = Path("eval/reports/precision_recall_report.json")
 
@@ -86,6 +90,9 @@ def _eval_figure(data: dict):
     labels = ["Precision", "Recall", "F1"]
     guarded = [g["precision"] * 100, g["recall"] * 100, g["f1"] * 100]
     raw = [r["precision"] * 100, r["recall"] * 100, r["f1"] * 100]
+
+    if not MATPLOTLIB_AVAILABLE:
+        return None
 
     import numpy as np
 
@@ -184,16 +191,22 @@ with tab_findings:
 with tab_bench:
     st.subheader("Real bug-fix benchmark — precision / recall / F1")
     data = load_eval_report()
-    fig = _eval_figure(data)
-    st.pyplot(fig)
-    plt.close(fig)
+
+    if MATPLOTLIB_AVAILABLE:
+        fig = _eval_figure(data)
+        if fig:
+            st.pyplot(fig)
+            plt.close(fig)
+    else:
+        st.info("Charts unavailable (matplotlib not installed). Showing metrics as text:")
 
     g = data["metrics_with_guardrails"]
     r = data["metrics_raw_baseline"]
-    st.markdown(
-        f"**PR Sage** — Precision `{g['precision']*100:.1f}%` · Recall `{g['recall']*100:.1f}%` · "
-        f"F1 `{g['f1']:.2f}` ((vs raw baseline Precision `{r['precision']*100:.1f}%`, F1 `{r['f1']:.2f}`))"
-    )
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Precision", f"{g['precision']*100:.1f}%", f"{(g['precision']-r['precision'])*100:+.1f}%")
+    col2.metric("Recall", f"{g['recall']*100:.1f}%", f"{(g['recall']-r['recall'])*100:+.1f}%")
+    col3.metric("F1 Score", f"{g['f1']:.2f}", f"{g['f1']-r['f1']:+.2f}")
+
     noise = data.get("noise_reduction_delta", {}).get("false_positives_eliminated", "n/a")
     st.success(f"False-positive noise reduced by **{noise}** via guardrails.")
 
