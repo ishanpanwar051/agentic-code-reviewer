@@ -90,6 +90,41 @@ class PRSageAgent:
         self.stage_error = ErrorHandlingStage()
         self.stage_review = ReviewStage()
 
+    def review_file(self, file_path: str | Path) -> ReviewResult:
+        """Executes the 4-stage review on a local file without requiring GitHub API."""
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        code = path.read_text(encoding="utf-8")
+        return self.review_code(code, filename=path.name)
+
+    def review_code(self, code: str, filename: str = "snippet.py") -> ReviewResult:
+        """Executes the 4-stage review on a raw code string."""
+        lines = code.splitlines()
+        chunk = CodeChunk(
+            chunk_id=0,
+            file_path=filename,
+            start_line=1,
+            end_line=len(lines),
+            lines=lines,
+            added_line_numbers=list(range(1, len(lines) + 1)),
+            is_partial=False,
+        )
+
+        console.print(f"[bold cyan]🔍 PR Sage reviewing file:[/bold cyan] `{filename}` ({len(lines)} lines)")
+        chunk_findings, chunk_note = self._process_chunk(chunk)
+        final_comments = self._apply_file_guardrails(chunk_findings, filename)
+        final_summary = f"## 🤖 PR Sage Review\nReviewed `{filename}` ({len(lines)} lines).\n\n"
+        final_summary += f"Found **{len(final_comments)} actionable issues**."
+
+        review_result = ReviewResult(comments=final_comments, summary=final_summary)
+        output_path = Path("review_output.json")
+        output_path.write_text(review_result.model_dump_json(indent=2), encoding="utf-8")
+
+        self._print_summary_table(review_result)
+        console.print(f"[bold green]✓ Review complete. Saved findings to `{output_path}`[/bold green]")
+        return review_result
+
     def run(
         self,
         pr_number: int,

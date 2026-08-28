@@ -21,8 +21,20 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--pr-number",
         type=int,
-        required=True,
+        default=None,
         help="Target GitHub Pull Request number to review.",
+    )
+    parser.add_argument(
+        "--file",
+        type=str,
+        default="",
+        help="Review a local file or demo file directly (e.g. demo/pr_vulnerable.py).",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        default=False,
+        help="Run review on demo/pr_vulnerable.py.",
     )
     parser.add_argument(
         "--owner",
@@ -64,7 +76,7 @@ def main(args: list[str] | None = None) -> int:
 
     # Initialize Settings with overrides
     overrides: dict[str, Any] = {}
-    if parsed_args.dry_run:
+    if parsed_args.dry_run or parsed_args.file or parsed_args.demo or parsed_args.pr_number is None:
         overrides["DRY_RUN"] = True
     if parsed_args.model:
         overrides["MODEL_NAME"] = parsed_args.model
@@ -91,13 +103,21 @@ def main(args: list[str] | None = None) -> int:
     agent = PRSageAgent(settings=settings, github=github, llm=llm)
 
     try:
-        agent.run(
-            pr_number=parsed_args.pr_number,
-            owner=parsed_args.owner or None,
-            repo=parsed_args.repo or None,
-            dry_run=parsed_args.dry_run,
-        )
-        return 0
+        if parsed_args.demo or (not parsed_args.file and parsed_args.pr_number is None):
+            target = parsed_args.file or "demo/pr_vulnerable.py"
+            agent.review_file(target)
+            return 0
+        elif parsed_args.file:
+            agent.review_file(parsed_args.file)
+            return 0
+        else:
+            agent.run(
+                pr_number=parsed_args.pr_number,
+                owner=parsed_args.owner or None,
+                repo=parsed_args.repo or None,
+                dry_run=parsed_args.dry_run,
+            )
+            return 0
     except Exception as exc:
         print(f"❌ PR Sage failed: {exc}", file=sys.stderr)
         return 1

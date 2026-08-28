@@ -606,22 +606,14 @@ def run_groq_llm_review(code: str, api_key: str, model_name: str, filename: str)
     return analyze_code_statically(code, filename)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Sidebar Controls
+# Sidebar Controls (Advanced Settings)
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## 🛡️ PR Sage Configuration")
+    st.markdown("### ⚙️ Engine & Guardrails")
     
-    review_mode = st.radio(
-        "Review Input Mode",
-        ["🧪 Demo Preset Snippets", "✍️ Custom Code Editor", "🐙 Live GitHub PR"],
-        index=0
-    )
-    
-    st.markdown("---")
-    st.markdown("### 🧠 Inference Engine")
     engine_choice = st.selectbox(
-        "Engine Selection",
+        "Inference Engine",
         [
             "⚡ Built-in Hybrid AI & AST Engine (Instant, Zero Setup)",
             "☁️ Groq Cloud LLM (llama-3.1-8b)",
@@ -656,56 +648,76 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("""
-<div class="main-header">
-    <div class="hero-title">🛡️ PR Sage — Agentic AI Code Reviewer</div>
-    <div class="hero-sub">Orchestrated 4-Stage Deterministic Pipeline · Strict Line Clamping · Production Guardrails · Zero Noise</div>
+<div class="main-header" style="padding: 14px 20px; margin-bottom: 14px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <div class="hero-title" style="font-size: 1.85rem;">🛡️ PR Sage — Agentic AI Code Reviewer</div>
+            <div class="hero-sub" style="font-size: 0.9rem;">4-Stage Deterministic Pipeline · Strict Line Clamping · Production Guardrails</div>
+        </div>
+        <div style="font-size: 0.85rem; color: #34D399; background: rgba(52, 211, 153, 0.12); padding: 4px 12px; border-radius: 12px; border: 1px solid rgba(52, 211, 153, 0.3);">
+            ● System Active
+        </div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 4-Stage Visual Status Banner
+# 4-Stage Visual Status Banner (Compact)
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown('<div class="stage-box"><b>1. Understand</b><br/><span style="font-size:0.8rem; color:#A78BFA;">Diff intent & risk hotspots</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="stage-box" style="padding: 8px 10px;"><b>1. Understand</b><br/><span style="font-size:0.75rem; color:#A78BFA;">Intent & AST Walk</span></div>', unsafe_allow_html=True)
 with col2:
-    st.markdown('<div class="stage-box"><b>2. Security Audit</b><br/><span style="font-size:0.8rem; color:#F87171;">SQLi, secrets, injection</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="stage-box" style="padding: 8px 10px;"><b>2. Security Audit</b><br/><span style="font-size:0.75rem; color:#F87171;">SQLi, Secrets, RCE</span></div>', unsafe_allow_html=True)
 with col3:
-    st.markdown('<div class="stage-box"><b>3. Error Handling</b><br/><span style="font-size:0.8rem; color:#FBBF24;">Bare excepts, leak checks</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="stage-box" style="padding: 8px 10px;"><b>3. Error Handling</b><br/><span style="font-size:0.75rem; color:#FBBF24;">Bare Excepts, Leaks</span></div>', unsafe_allow_html=True)
 with col4:
-    st.markdown('<div class="stage-box"><b>4. Guardrails & Review</b><br/><span style="font-size:0.8rem; color:#34D399;">Deduplication & severity caps</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="stage-box" style="padding: 8px 10px;"><b>4. Guardrails</b><br/><span style="font-size:0.75rem; color:#34D399;">Dedupe & Noise Caps</span></div>', unsafe_allow_html=True)
 
-st.markdown("<br/>", unsafe_allow_html=True)
+st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Input Setup & Run Trigger
+# Prominent Top Mode Selector & Input Area
 # ─────────────────────────────────────────────────────────────────────────────
+
+review_mode = st.radio(
+    "Choose Review Mode:",
+    ["🧪 Demo Preset Scenarios", "✍️ Custom Code / Diff Editor", "🐙 Live GitHub Pull Request"],
+    horizontal=True,
+    index=0
+)
 
 target_code = ""
 active_filename = "demo.py"
 
-if review_mode == "🧪 Demo Preset Snippets":
-    selected_preset = st.selectbox("Select Demo Scenario", list(PRESET_SNIPPETS.keys()), index=0)
+if "Demo" in review_mode:
+    selected_preset = st.selectbox("Select Scenario:", list(PRESET_SNIPPETS.keys()), index=0)
     target_code = PRESET_SNIPPETS[selected_preset]
     active_filename = "pr_vulnerable.py" if "Vulnerable" in selected_preset else ("injection_test.py" if "Adversarial" in selected_preset else "pr_clean.py")
     
-    with st.expander("👁️ View Selected Source Code", expanded=False):
+    with st.expander("👁️ View Source Code for this Scenario", expanded=False):
         st.code(target_code, language="python", line_numbers=True)
 
-elif review_mode == "✍️ Custom Code Editor":
-    active_filename = st.text_input("Target Filename", value="user_module.py")
+elif "Custom" in review_mode:
+    c_col1, c_col2 = st.columns([1, 3])
+    with c_col1:
+        active_filename = st.text_input("Target Filename", value="user_module.py")
+    with c_col2:
+        st.caption("Paste any code snippet or raw Git Unified Diff below:")
+    
     target_code = st.text_area(
-        "Paste Code or Git Unified Diff below to analyze:",
+        "Code Editor:",
         value=PRESET_SNIPPETS["🔴 Vulnerable App (SQLi + Secret + Bare Except)"],
-        height=260,
+        height=220,
+        label_visibility="collapsed"
     )
 
-elif review_mode == "🐙 Live GitHub PR":
-    gh_col1, gh_col2 = st.columns([2, 1])
+elif "GitHub" in review_mode:
+    gh_col1, gh_col2 = st.columns([3, 1])
     with gh_col1:
-        gh_repo = st.text_input("Repository (owner/repo)", value="ishanpanwar051/agentic-code-reviewer")
+        gh_repo = st.text_input("GitHub Repository (owner/repo)", value="ishanpanwar051/agentic-code-reviewer")
     with gh_col2:
         gh_pr = st.number_input("PR Number", min_value=1, value=1, step=1)
     
-    gh_token = st.text_input("GitHub Token (Optional for public repos)", type="password")
+    gh_token = st.text_input("GitHub Personal Access Token (Optional for public repos)", type="password")
     
     fetch_btn = st.button("📥 Fetch PR Diff from GitHub")
     if fetch_btn:
@@ -737,6 +749,7 @@ with run_col2:
 # ─────────────────────────────────────────────────────────────────────────────
 # Execution & Review Pipeline Processing (Auto Syncs on Change)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 # Create unique state signature to prevent stale results
 state_sig = f"{review_mode}_{target_code[:40]}_{len(target_code)}_{max_comments_file}_{max_comments_pr}_{engine_choice}"
