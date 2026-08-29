@@ -3,7 +3,7 @@ services:
     name: pr-sage
     runtime: docker
     plan: free
-    dockerfilePath: Agentic Code Reviwer/Dockerfile
+    dockerfilePath: Dockerfile
     envVars:
       - key: GROQ_API_KEY
         sync: false
@@ -17,40 +17,3 @@ services:
         value: "true"
       - key: PYTHON_VERSION
         value: 3.11.0
-
-  - type: web
-    name: docretriever-api
-    runtime: docker
-    plan: free
-    dockerfilePath: DocRetriever/Dockerfile
-    envVars:
-      - key: GROQ_API_KEY
-        sync: false
-      - key: POSTGRES_HOST
-        fromDatabase:
-          name: docretriever-db
-          property: host
-      - key: POSTGRES_PORT
-        fromDatabase:
-          name: docretriever-db
-          property: port
-      - key: POSTGRES_USER
-        fromDatabase:
-          name: docretriever-db
-          property: user
-      - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: docretriever-db
-          property: password
-      - key: POSTGRES_DB
-        fromDatabase:
-          name: docretriever-db
-          property: database
-      - key: PYTHON_VERSION
-        value: 3.11.0
-
-databases:
-  - name: docretriever-db
-    plan: free
-    databaseName: docretriever_db
-    user: docretriever

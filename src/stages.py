@@ -27,6 +27,44 @@ from src.models import ReviewComment, StageResult
 logger = logging.getLogger("pr_sage.stages")
 
 
+def detect_language(file_path: str) -> str:
+    """Detects markdown language identifier from file extension or path."""
+    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+    ext_map = {
+        "py": "python",
+        "pyw": "python",
+        "cpp": "cpp",
+        "cxx": "cpp",
+        "cc": "cpp",
+        "c": "c",
+        "h": "c",
+        "hpp": "cpp",
+        "js": "javascript",
+        "jsx": "javascript",
+        "mjs": "javascript",
+        "ts": "typescript",
+        "tsx": "typescript",
+        "java": "java",
+        "go": "go",
+        "rs": "rust",
+        "cs": "csharp",
+        "php": "php",
+        "rb": "ruby",
+        "sh": "bash",
+        "bash": "bash",
+        "kt": "kotlin",
+        "kts": "kotlin",
+        "swift": "swift",
+        "sql": "sql",
+        "html": "html",
+        "css": "css",
+        "json": "json",
+        "yaml": "yaml",
+        "yml": "yaml",
+    }
+    return ext_map.get(ext, "python")
+
+
 # =====================================================================
 # Stage Output Data Schemas
 # =====================================================================
@@ -169,6 +207,7 @@ class UnderstandStage(BaseStage):
         lines = ctx.get("lines", [])
         added_lines = ctx.get("added_line_numbers", [])
         start_line = ctx.get("start_line", 1)
+        lang = detect_language(file_path)
 
         formatted_code = "\n".join(
             f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
@@ -176,9 +215,9 @@ class UnderstandStage(BaseStage):
         )
 
         return (
-            f"Analyze the following code changes in `{file_path}`.\n\n"
+            f"Analyze the following {lang} code changes in `{file_path}`.\n\n"
             f"Line numbers with '+' are newly added/modified lines.\n\n"
-            f"```python\n{formatted_code}\n```\n\n"
+            f"```{lang}\n{formatted_code}\n```\n\n"
             f"Provide:\n"
             f"1. summary: A concise technical summary of what this code does.\n"
             f"2. intent: The apparent developer intent (refactor, feature, bugfix).\n"
@@ -218,6 +257,7 @@ class SecurityStage(BaseStage):
         added_lines = ctx.get("added_line_numbers", [])
         start_line = ctx.get("start_line", 1)
         understand_notes = ctx.get("understand_notes", "None")
+        lang = detect_language(file_path)
 
         formatted_code = "\n".join(
             f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
@@ -225,10 +265,10 @@ class SecurityStage(BaseStage):
         )
 
         return (
-            f"File: `{file_path}`\n"
+            f"File: `{file_path}` ({lang})\n"
             f"Context from Stage 1 (Understand):\n{understand_notes}\n\n"
             f"Code segment (lines marked '+' are newly added lines available for review):\n"
-            f"```python\n{formatted_code}\n```\n\n"
+            f"```{lang}\n{formatted_code}\n```\n\n"
             f"Added line numbers eligible for comment: {added_lines}\n\n"
             f"Review ONLY the '+' lines for security vulnerabilities. "
             f"For each finding, specify path='{file_path}', exact line number, severity ('critical' or 'warning'), "
@@ -275,6 +315,7 @@ class ErrorHandlingStage(BaseStage):
         start_line = ctx.get("start_line", 1)
         understand_notes = ctx.get("understand_notes", "None")
         security_notes = ctx.get("security_notes", "None")
+        lang = detect_language(file_path)
 
         formatted_code = "\n".join(
             f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
@@ -282,11 +323,11 @@ class ErrorHandlingStage(BaseStage):
         )
 
         return (
-            f"File: `{file_path}`\n"
+            f"File: `{file_path}` ({lang})\n"
             f"Understand Context:\n{understand_notes}\n"
             f"Security Notes:\n{security_notes}\n\n"
             f"Code segment (lines marked '+' are newly added lines):\n"
-            f"```python\n{formatted_code}\n```\n\n"
+            f"```{lang}\n{formatted_code}\n```\n\n"
             f"Added line numbers eligible for comment: {added_lines}\n\n"
             f"Audit the '+' lines for reliability and error-handling bugs. "
             f"For each finding, specify path='{file_path}', line number from added lines, "
@@ -333,6 +374,7 @@ class ReviewStage(BaseStage):
         start_line = ctx.get("start_line", 1)
         prior_findings: list[ReviewComment] = ctx.get("prior_findings", [])
         understand_notes = ctx.get("understand_notes", "")
+        lang = detect_language(file_path)
 
         prior_findings_text = "\n".join(
             f"- Line {f.line} [{f.severity.upper()}] [{f.category.upper()}]: {f.comment}"
@@ -345,11 +387,11 @@ class ReviewStage(BaseStage):
         )
 
         return (
-            f"File: `{file_path}`\n"
+            f"File: `{file_path}` ({lang})\n"
             f"Understand Context:\n{understand_notes}\n\n"
             f"Prior Stage Findings:\n{prior_findings_text}\n\n"
             f"Code segment (review only '+' lines):\n"
-            f"```python\n{formatted_code}\n```\n\n"
+            f"```{lang}\n{formatted_code}\n```\n\n"
             f"Eligible added line numbers: {added_lines}\n\n"
             f"Generate the final consolidated review comments. You may preserve valid prior findings and add "
             f"crucial logic/performance remarks on '+' lines. Provide a final markdown summary of the changes."

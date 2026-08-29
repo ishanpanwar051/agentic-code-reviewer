@@ -1,1 +1,0 @@
-# DocRetriever FastAPI application

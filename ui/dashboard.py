@@ -247,25 +247,24 @@ ENTERPRISE_CSS = """
 st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Real-World Preset Scenarios
+# Real-World Polyglot Preset Scenarios
 # ─────────────────────────────────────────────────────────────────────────────
 
 PRESET_SNIPPETS = {
-    "🔴 Vulnerable App (SQLi + Secret + Bare Except + Memory Leak)": '''import os
+    "🐍 Python: Vulnerable App (SQLi + Secret + Bare Except)": '''import os
 import sqlite3
 import subprocess
 
-# 1. Hardcoded Secret Key (CWE-798: Critical Security Flaw)
+# 1. Hardcoded Secret Key (CWE-798)
 STRIPE_SECRET_KEY = "sk_live_9381029381029381029381"
 JWT_SECRET_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 
 def search_customer_orders(username, db_conn):
-    # 2. SQL Injection via string interpolation (CWE-89: Critical Flaw)
+    # 2. SQL Injection via string formatting (CWE-89)
     query = f"SELECT * FROM orders WHERE customer_name = '{username}'"
     cursor = db_conn.cursor()
     cursor.execute(query)
     
-    # 3. Crash Risk: Unchecked None dereference (CWE-476)
     order_data = cursor.fetchone()
     order_id = order_data.get("id").upper()
     return order_id
@@ -274,17 +273,140 @@ def process_refund(amount, user_id):
     try:
         total_fee = amount / 0
     except:
-        # 4. Silent Error Suppression (CWE-391: Reliability Risk)
+        # 3. Silent Error Suppression (CWE-391)
         pass
     return True
 
 def create_archive_backup(folder_name):
-    # 5. OS Command Injection via shell=True (CWE-78: Critical Flaw)
+    # 4. OS Command Injection (CWE-78)
     command = f"tar -czf backup.tar.gz {folder_name}"
     subprocess.run(command, shell=True)
 ''',
 
-    "🟢 Clean & Secure Production Code": '''import os
+    "⚙️ C/C++: Buffer Overflow & Memory Safety Bugs": '''#include <iostream>
+#include <cstring>
+
+// 1. Hardcoded API Token (CWE-798)
+const char* API_KEY = "sk-live-9938471928374619283746";
+
+void processUserData(const char* userInput) {
+    // 2. Buffer Overflow: Unsafe strcpy without bounds check (CWE-120)
+    char buffer[16];
+    strcpy(buffer, userInput);
+
+    // 3. Memory Leak: Unreleased heap memory (CWE-401)
+    int* dynamicScores = new int[50];
+
+    // 4. Null Pointer Dereference: Instant OS Crash / Segfault (CWE-476)
+    int* ptr = nullptr;
+    if (strlen(buffer) > 5) {
+        std::cout << *ptr << std::endl; 
+    }
+
+    // 5. Missing: delete[] dynamicScores;
+}
+''',
+
+    "☕ Java: SQL Injection & Command Injection": '''package com.enterprise.service;
+
+import java.sql.*;
+import java.io.*;
+
+public class OrderService {
+    // 1. Hardcoded Secret (CWE-798)
+    private static final String DB_PASS = "admin_super_secret_password_12345";
+
+    public void fetchOrder(String userId, Connection conn) {
+        try {
+            // 2. SQL Injection: String concatenation in query (CWE-89)
+            Statement stmt = conn.createStatement();
+            String sql = "SELECT * FROM orders WHERE user_id = '" + userId + "'";
+            ResultSet rs = stmt.executeQuery(sql);
+        } catch (Exception e) {
+            // 3. Silent Exception Swallowing (CWE-391)
+        }
+    }
+
+    public void backupLogs(String folderPath) throws IOException {
+        // 4. OS Command Injection via Runtime.exec (CWE-78)
+        Runtime.getRuntime().exec("tar -czf backup.tar.gz " + folderPath);
+    }
+}
+''',
+
+    "🟨 JavaScript/TypeScript: DOM XSS & Eval Injection": '''// 1. Hardcoded API Secret (CWE-798)
+const STRIPE_SECRET = "sk_live_9381029381029381029381";
+
+function renderUserProfile(userData, rawUserInput) {
+    // 2. DOM Cross-Site Scripting (XSS via innerHTML) (CWE-79)
+    const profileContainer = document.getElementById("profile");
+    profileContainer.innerHTML = "<div>Welcome, " + rawUserInput + "</div>";
+
+    // 3. Dangerous Dynamic Eval Execution (CWE-95)
+    const computedConfig = eval("(" + userData.configPayload + ")");
+
+    try {
+        const value = userData.total / 0;
+    } catch (e) {
+        // 4. Empty Catch Block (CWE-391)
+    }
+}
+''',
+
+    "🔷 Go: Unhandled Errors & Injection Risk": '''package main
+
+import (
+    "database/sql"
+    "fmt"
+    "net/http"
+)
+
+// 1. Hardcoded JWT Secret (CWE-798)
+const jwtSecret = "super_secret_jwt_key_993810293"
+
+func handleUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+    username := r.URL.Query().Get("user")
+
+    // 2. SQL Injection via string interpolation (CWE-89)
+    query := fmt.Sprintf("SELECT id, role FROM accounts WHERE username = '%s'", username)
+    
+    // 3. Unhandled error return value (CWE-391)
+    rows, _ := db.Query(query)
+    defer rows.Close()
+}
+''',
+
+    "🦀 Rust: Unsafe Pointer Dereference & Panic Risks": '''pub fn process_data(user_input: Option<String>) {
+    // 1. Panic risk on unwrap without error handling (CWE-754)
+    let payload = user_input.unwrap();
+
+    let raw_ptr: *const i32 = std::ptr::null();
+    
+    // 2. Unsafe block: Null Pointer Dereference (CWE-476 / CWE-1188)
+    unsafe {
+        let _val = *raw_ptr;
+    }
+}
+''',
+
+    "🐘 PHP: Remote Code Execution & File Inclusion": '''<?php
+// 1. Hardcoded Database Password (CWE-798)
+$db_pass = "root_super_secure_pass_99218";
+
+// 2. Remote Code Execution via eval (CWE-95)
+$calc = $_GET['calc'];
+eval('$result = ' . $calc . ';');
+
+// 3. Local/Remote File Inclusion (LFI) (CWE-98)
+$page = $_GET['page'];
+include($page);
+
+// 4. Reflected XSS (CWE-79)
+echo "<h1>Welcome " . $_GET['user'] . "</h1>";
+?>
+''',
+
+    "🟢 Clean & Secure Polyglot Production Code": '''import os
 import sqlite3
 import logging
 
@@ -299,7 +421,6 @@ def search_customer_orders(username: str, db_conn: sqlite3.Connection):
     cursor = db_conn.cursor()
     cursor.execute(query, (username,))
     
-    # Safe: Defensive None-check before attribute dereference
     order_data = cursor.fetchone()
     if not order_data:
         return None
@@ -327,6 +448,59 @@ def run_backup(user_input_folder):
 ''',
 }
 
+
+def detect_language(code: str, filename: str = "") -> tuple[str, str]:
+    """Detects (lang_key, display_name) from filename extension or code signatures."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    
+    ext_map = {
+        "py": ("python", "Python"),
+        "pyw": ("python", "Python"),
+        "cpp": ("cpp", "C++"),
+        "cxx": ("cpp", "C++"),
+        "cc": ("cpp", "C++"),
+        "c": ("c", "C"),
+        "h": ("cpp", "C/C++ Header"),
+        "hpp": ("cpp", "C++ Header"),
+        "js": ("javascript", "JavaScript"),
+        "jsx": ("javascript", "React JSX"),
+        "mjs": ("javascript", "JavaScript Module"),
+        "ts": ("typescript", "TypeScript"),
+        "tsx": ("typescript", "React TSX"),
+        "java": ("java", "Java"),
+        "go": ("go", "Go"),
+        "rs": ("rust", "Rust"),
+        "cs": ("csharp", "C#"),
+        "php": ("php", "PHP"),
+        "rb": ("ruby", "Ruby"),
+        "sh": ("bash", "Shell/Bash"),
+        "bash": ("bash", "Bash"),
+        "kt": ("kotlin", "Kotlin"),
+        "kts": ("kotlin", "Kotlin Script"),
+        "swift": ("swift", "Swift"),
+        "sql": ("sql", "SQL"),
+    }
+    if ext in ext_map:
+        return ext_map[ext]
+        
+    # Heuristics based on code content
+    if re.search(r'#include\s*<|std::|int\s+main\s*\(|nullptr|delete\[\]', code):
+        return ("cpp", "C++")
+    if re.search(r'public\s+class\s+|System\.out\.println|import\s+java\.', code):
+        return ("java", "Java")
+    if re.search(r'package\s+main|func\s+\w+\(|fmt\.Println', code):
+        return ("go", "Go")
+    if re.search(r'fn\s+main\s*\(|let\s+mut\s+|impl\s+\w+|unsafe\s*\{', code):
+        return ("rust", "Rust")
+    if re.search(r'<\?php|\$_GET\[|\$_POST\[|\$this->', code):
+        return ("php", "PHP")
+    if re.search(r'console\.log\(|const\s+\w+\s*=\s*require|import\s+.*from|document\.', code):
+        return ("javascript", "JavaScript")
+    if re.search(r'def\s+\w+\(|import\s+os|import\s+sys|class\s+\w+:', code):
+        return ("python", "Python")
+        
+    return ("python", "Python / Generic")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Static AST & AppSec Pattern Analyzer
 # ─────────────────────────────────────────────────────────────────────────────
@@ -335,45 +509,70 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
     findings: list[dict[str, Any]] = []
     stage_traces: dict[str, Any] = {}
     
+    lang_key, lang_display = detect_language(code, filename)
+
     # 1. Prompt Injection Sanitization
     clean_code, injection_detected = sanitize_untrusted_input(code) if INTERNAL_MODULES_LOADED else (
         re.sub(r"(?i)(ignore\s+previous|system\s*:\s*approve)", "[REDACTED_DIRECTIVE]", code),
         bool(re.search(r"(?i)(ignore\s+previous|system\s*:\s*approve)", code))
     )
 
-    # 2. Stage 1: AST Walk & Code Structure
+    # 2. Stage 1: AST Walk & Code Structure (Language Specific)
     functions_found = []
     classes_found = []
     syntax_error_found = False
 
-    try:
-        tree = ast.parse(clean_code)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                functions_found.append(node.name)
-            elif isinstance(node, ast.ClassDef):
-                classes_found.append(node.name)
-    except SyntaxError as syn_err:
-        syntax_error_found = True
-        line_num = syn_err.lineno or 1
-        bad_text = (syn_err.text or "Invalid Syntax").strip()
-        findings.append({
-            "line": line_num,
-            "severity": "critical",
-            "title": f"Syntax Error: {syn_err.msg}",
-            "category": "Syntax",
-            "cwe": "CWE-1188: Syntax Failure",
-            "owasp": "Code Compilation & Correctness",
-            "description": f"Python code cannot compile due to invalid syntax: '{syn_err.msg}'. Check for missing colons ':', unclosed brackets, or bad indentation.",
-            "bad_code": bad_text,
-            "fix_code": f"# Correct syntax on line {line_num} (check colons ':' or brackets)"
-        })
-    except Exception:
-        pass
+    if lang_key == "python":
+        try:
+            tree = ast.parse(clean_code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    functions_found.append(node.name)
+                elif isinstance(node, ast.ClassDef):
+                    classes_found.append(node.name)
+        except SyntaxError as syn_err:
+            syntax_error_found = True
+            line_num = syn_err.lineno or 1
+            bad_text = (syn_err.text or "Invalid Syntax").strip()
+            findings.append({
+                "line": line_num,
+                "severity": "critical",
+                "title": f"Syntax Error: {syn_err.msg}",
+                "category": "Syntax",
+                "cwe": "CWE-1188: Syntax Failure",
+                "owasp": "Code Compilation & Correctness",
+                "description": f"Python code cannot compile due to invalid syntax: '{syn_err.msg}'. Check for missing colons ':', unclosed brackets, or bad indentation.",
+                "bad_code": bad_text,
+                "fix_code": f"# Correct syntax on line {line_num} (check colons ':' or brackets)"
+            })
+        except Exception:
+            pass
+    elif lang_key in ("cpp", "c"):
+        for m in re.finditer(r'(?:void|int|char|bool|float|double|auto|[\w:]+)\s+(\w+)\s*\([^)]*\)\s*\{?', code):
+            fn_name = m.group(1)
+            if fn_name not in ("if", "for", "while", "switch", "catch", "sizeof"):
+                functions_found.append(fn_name)
+    elif lang_key in ("javascript", "typescript"):
+        for m in re.finditer(r'(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>)', code):
+            functions_found.append(m.group(1) or m.group(2))
+    elif lang_key in ("java", "csharp", "kotlin"):
+        for m in re.finditer(r'(?:public|private|protected|static|final|\s)+[\w<>\[\]]+\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\{?', code):
+            fn_name = m.group(1)
+            if fn_name not in ("if", "for", "while", "switch", "catch", "class"):
+                functions_found.append(fn_name)
+    elif lang_key == "go":
+        for m in re.finditer(r'func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(', code):
+            functions_found.append(m.group(1))
+    elif lang_key == "rust":
+        for m in re.finditer(r'fn\s+(\w+)\s*\(', code):
+            functions_found.append(m.group(1))
+    elif lang_key == "php":
+        for m in re.finditer(r'function\s+(\w+)\s*\(', code):
+            functions_found.append(m.group(1))
 
-    summary = f"Parsed `{filename}` ({len(code.splitlines())} LOC)."
+    summary = f"Parsed `{filename}` ({lang_display}, {len(code.splitlines())} LOC)."
     if functions_found:
-        summary += f" Detected {len(functions_found)} function(s): `{', '.join(functions_found)}`."
+        summary += f" Detected {len(functions_found)} function/symbol(s): `{', '.join(functions_found[:8])}`."
     elif syntax_error_found:
         summary += " ❌ Syntax compilation errors detected."
 
@@ -381,132 +580,57 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
     sec_count = 0
     err_count = 0
 
-    # 3. Stage 2 & 3: Security, Logic & Reliability Rules
+    # 3. Stage 2 & 3: Polyglot Security, Logic & Reliability Rules
     for idx, raw_l in enumerate(lines, start=1):
         l = raw_l.strip()
+        if not l or l.startswith("//") or l.startswith("#") or l.startswith("/*") or l.startswith("*"):
+            if re.search(r"(?i)(ignore\s+previous|system\s*:\s*approve)", l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Adversarial Prompt Injection in Comments",
+                    "category": "AppSec",
+                    "cwe": "CWE-1188: Directive Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Adversarial prompt injection attempting to override AI code review instructions.",
+                    "bad_code": l,
+                    "fix_code": "// Safe comment"
+                })
+                sec_count += 1
+            continue
 
-        # Division by zero logic bug
-        if re.search(r'/\s*0(\.0)?(\s*[\+\-\*\/\)]|$)', l):
+        # ─── UNIVERSAL APPSPEC: Hardcoded Secrets ───
+        if re.search(r'(?i)(secret_key|api_key|password|jwt_secret|private_key|token|auth_token)\s*[:=]\s*["\'][a-zA-Z0-9_\-]{8,}["\']', l):
             findings.append({
                 "line": idx,
                 "severity": "critical",
-                "title": "ZeroDivisionError Crash Risk",
-                "category": "Logic / Bug",
-                "cwe": "CWE-369: Divide By Zero",
-                "owasp": "Code Correctness",
-                "description": "Literal division by zero will cause an immediate unhandled `ZeroDivisionError` exception.",
-                "bad_code": l,
-                "fix_code": "if denominator != 0:\n    result = amount / denominator\nelse:\n    result = 0"
-            })
-            err_count += 1
-
-        # Mutable default argument bug
-        if re.search(r'def\s+\w+\(.*=\s*(\[\]|\{\})\)', l):
-            findings.append({
-                "line": idx,
-                "severity": "warning",
-                "title": "Mutable Default Argument Logic Bug",
-                "category": "Logic / Bug",
-                "cwe": "CWE-1188: Default Mutable State",
-                "owasp": "Code Correctness",
-                "description": "Default mutable arguments (`=[]` or `={}`) are shared across all function calls, creating unexpected state bugs.",
-                "bad_code": l,
-                "fix_code": "def process_data(items=None):\n    if items is None:\n        items = []"
-            })
-            err_count += 1
-
-        # Identity comparison on literals (is "str" or is 10)
-        if re.search(r'\b(if|elif|while)\s+.*\bis\s+(["\'].*["\']|\d+)', l):
-            findings.append({
-                "line": idx,
-                "severity": "warning",
-                "title": "Inappropriate Identity Comparison (`is` vs `==`)",
-                "category": "Logic / Bug",
-                "cwe": "CWE-1024: Comparison Failure",
-                "owasp": "Code Correctness",
-                "description": "Using `is` checks memory pointer identity instead of value equality. Use `==` for comparing strings and numbers.",
-                "bad_code": l,
-                "fix_code": "if status == 'active':"
-            })
-            err_count += 1
-
-        # Hardcoded Secrets Check
-        if re.search(r'(?i)(secret_key|api_key|password|jwt_secret|private_key|token)\s*=\s*["\'][a-zA-Z0-9_\-]{8,}["\']', l):
-            findings.append({
-                "line": idx,
-                "severity": "critical",
-                "title": "Hardcoded Credential Token",
+                "title": "Hardcoded Credential / API Secret Token",
                 "category": "AppSec",
-                "cwe": "CWE-798",
+                "cwe": "CWE-798: Hardcoded Credentials",
                 "owasp": "A07:2021-Identification & Auth Failures",
-                "description": "Sensitive API key or credential is hardcoded in source. Compromised if code is leaked.",
+                "description": "Sensitive API key, password, or token is hardcoded in source code.",
                 "bad_code": l,
-                "fix_code": 'import os\nAPI_KEY = os.getenv("API_KEY")'
+                "fix_code": 'const key = process.env.API_KEY || os.getenv("API_KEY"); // Load from environment'
             })
             sec_count += 1
 
-        # SQL Injection Check
-        if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE).*(f["\']|%\s*\w+|\.format\(|\+\s*\w+)', l) or ("execute(" in l and f"f\"" in l):
+        # ─── UNIVERSAL APPSPEC: Disabled SSL ───
+        if re.search(r'(?i)(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|InsecureSkipVerify\s*:\s*true|CURLOPT_SSL_VERIFYPEER\s*,\s*false)', l):
             findings.append({
                 "line": idx,
                 "severity": "critical",
-                "title": "SQL Injection (Unescaped Interpolation)",
-                "category": "AppSec",
-                "cwe": "CWE-89",
-                "owasp": "A03:2021-Injection",
-                "description": "User input is directly concatenated into SQL query. Attacker can read or wipe database.",
-                "bad_code": l,
-                "fix_code": 'cursor.execute("SELECT * FROM orders WHERE customer_name = ?", (username,))'
-            })
-            sec_count += 1
-
-        # Command Injection Check
-        if re.search(r'subprocess\.(run|Popen|call|check_output)\(.*shell\s*=\s*True', l) or re.search(r'os\.system\(', l):
-            findings.append({
-                "line": idx,
-                "severity": "critical",
-                "title": "OS Command Injection (`shell=True`)",
-                "category": "AppSec",
-                "cwe": "CWE-78",
-                "owasp": "A03:2021-Injection",
-                "description": "Dangerous execution of shell commands with untrusted string formatting.",
-                "bad_code": l,
-                "fix_code": 'subprocess.run(["tar", "-czf", "backup.tar.gz", safe_folder], shell=False)'
-            })
-            sec_count += 1
-
-        # Dynamic Code Execution (eval / exec / pickle)
-        if re.search(r'\b(eval|exec|pickle\.loads)\(', l):
-            findings.append({
-                "line": idx,
-                "severity": "critical",
-                "title": "Dangerous Dynamic Code Execution (`eval`/`exec`)",
-                "category": "AppSec",
-                "cwe": "CWE-95: Eval Injection",
-                "owasp": "A03:2021-Injection",
-                "description": "Dynamic execution of arbitrary code or untrusted serialized objects allows remote code execution (RCE).",
-                "bad_code": l,
-                "fix_code": 'import ast\nparsed_val = ast.literal_eval(safe_input)'
-            })
-            sec_count += 1
-
-        # Insecure SSL Verification (verify=False)
-        if re.search(r'verify\s*=\s*False', l):
-            findings.append({
-                "line": idx,
-                "severity": "critical",
-                "title": "Disabled SSL Certificate Validation",
+                "title": "Disabled SSL Certificate Validation (MitM Risk)",
                 "category": "AppSec",
                 "cwe": "CWE-295: Improper Certificate Validation",
                 "owasp": "A02:2021-Cryptographic Failures",
-                "description": "Disabling SSL validation (`verify=False`) leaves network traffic vulnerable to Man-in-the-Middle (MitM) interception.",
+                "description": "Disabling SSL validation leaves network traffic vulnerable to Man-in-the-Middle interception.",
                 "bad_code": l,
-                "fix_code": 'response = requests.get(url, verify=True)'
+                "fix_code": 'Enable strict SSL validation (verify=True / rejectUnauthorized: true)'
             })
             sec_count += 1
 
-        # Insecure Cryptographic Hash (MD5 / SHA1)
-        if re.search(r'hashlib\.(md5|sha1)\(', l):
+        # ─── UNIVERSAL APPSPEC: Weak Cryptographic Hashes ───
+        if re.search(r'(?i)\b(md5|sha1)\s*\(', l) or "hashlib.md5" in l:
             findings.append({
                 "line": idx,
                 "severity": "warning",
@@ -516,65 +640,367 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 "owasp": "A02:2021-Cryptographic Failures",
                 "description": "MD5 and SHA-1 are cryptographically broken and vulnerable to collision attacks. Upgrade to SHA-256 or bcrypt.",
                 "bad_code": l,
-                "fix_code": 'import hashlib\nhash_val = hashlib.sha256(data.encode()).hexdigest()'
+                "fix_code": 'Use SHA-256 or bcrypt / Argon2 for cryptography.'
             })
             sec_count += 1
 
-        # Bare except Check
-        if re.search(r'^\s*except\s*:\s*(pass)?', raw_l):
+        # ─── UNIVERSAL LOGIC: Division by Zero ───
+        if re.search(r'/\s*0(\.0)?(\s*[\+\-\*\/\);]|$)', l):
             findings.append({
                 "line": idx,
-                "severity": "warning",
-                "title": "Silent Exception Swallowing (`except: pass`)",
-                "category": "Reliability",
-                "cwe": "CWE-391",
-                "owasp": "A09:2021-Security Logging & Monitoring",
-                "description": "Bare `except:` silently hides all critical crashes and errors, preventing telemetry.",
+                "severity": "critical",
+                "title": "ZeroDivision Crash Risk",
+                "category": "Logic / Bug",
+                "cwe": "CWE-369: Divide By Zero",
+                "owasp": "Code Correctness",
+                "description": "Literal division by zero causes immediate unhandled runtime exception/crash.",
                 "bad_code": l,
-                "fix_code": 'except Exception as exc:\n    logger.error(f"Failed operation: {exc}")\n    raise'
+                "fix_code": "if (denominator != 0) { result = amount / denominator; }"
             })
             err_count += 1
 
-        # Unchecked None dereference
-        if re.search(r'\.get\([^)]+\)\.(upper|lower|split|strip|get)\(', l):
-            findings.append({
-                "line": idx,
-                "severity": "warning",
-                "title": "Unchecked NoneType Dereference Crash",
-                "category": "Reliability",
-                "cwe": "CWE-476",
-                "owasp": "Code Quality / Stability",
-                "description": "Chained method call on dictionary `.get()` raises `AttributeError` if key is missing.",
-                "bad_code": l,
-                "fix_code": 'val = order_data.get("id")\norder_id = val.upper() if val is not None else None'
-            })
-            err_count += 1
+        # ─── C / C++ RULES ───
+        if lang_key in ("cpp", "c"):
+            if re.search(r'\b(strcpy|strcat|sprintf|vsprintf|gets)\s*\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Unbounded Buffer Overflow Risk (`strcpy`/`sprintf`/`gets`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-120: Classic Buffer Overflow",
+                    "owasp": "A03:2021-Injection",
+                    "description": f"Unsafe C string function in `{l}` does not perform bounds checking and causes stack/heap memory corruption.",
+                    "bad_code": l,
+                    "fix_code": 'strncpy_s(dest, sizeof(dest), src, _TRUNCATE); // Or use std::string in C++'
+                })
+                sec_count += 1
 
-        # File descriptor leak (open without with)
-        if re.search(r'^\s*\w+\s*=\s*open\(', l) and not any("with " in lines[max(0, idx-2)] for _ in [1]):
-            findings.append({
-                "line": idx,
-                "severity": "warning",
-                "title": "File Resource Leak (Missing Context Manager)",
-                "category": "Reliability",
-                "cwe": "CWE-775: Missing Resource Release",
-                "owasp": "Resource Exhaustion",
-                "description": "File opened directly without `with open(...) as f:` context manager. Can exhaust OS file descriptors.",
-                "bad_code": l,
-                "fix_code": 'with open(file_path, "r") as f:\n    data = f.read()'
-            })
-            err_count += 1
+            if re.search(r'\b(new\s+\w+|malloc\s*\()', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Manual Heap Memory Allocation (Memory Leak Risk)",
+                    "category": "Reliability",
+                    "cwe": "CWE-401: Missing Release of Memory after Effective Lifetime",
+                    "owasp": "Resource Exhaustion",
+                    "description": "Heap memory allocated without automated lifetime management. Ensure corresponding delete[] / free or use std::unique_ptr / std::vector.",
+                    "bad_code": l,
+                    "fix_code": "std::unique_ptr<int[]> data = std::make_unique<int[]>(size);"
+                })
+                err_count += 1
+
+            if re.search(r'\*\s*(?:ptr|p|data|node)\b', l) or "std::cout << *ptr" in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Null Pointer Dereference (Segmentation Fault / Crash)",
+                    "category": "Reliability",
+                    "cwe": "CWE-476: NULL Pointer Dereference",
+                    "owasp": "Code Correctness",
+                    "description": "Dereferencing a pointer that may be nullptr or NULL will cause an instant OS Segmentation Fault.",
+                    "bad_code": l,
+                    "fix_code": "if (ptr != nullptr) {\n    std::cout << *ptr;\n}"
+                })
+                err_count += 1
+
+        # ─── JAVASCRIPT / TYPESCRIPT RULES ───
+        if lang_key in ("javascript", "typescript"):
+            if re.search(r'\b(innerHTML|outerHTML|document\.write)\s*=', l) or "dangerouslySetInnerHTML" in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Cross-Site Scripting (DOM XSS via `innerHTML`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-79: Cross-Site Scripting (XSS)",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Directly assigning unsanitized dynamic input to `innerHTML` allows malicious script injection in victim browsers.",
+                    "bad_code": l,
+                    "fix_code": 'element.textContent = sanitize(userInput);'
+                })
+                sec_count += 1
+
+            if re.search(r'\b(eval|new\s+Function)\s*\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Dangerous Dynamic Code Execution (`eval`/`new Function`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-95: Eval Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Executing arbitrary dynamic JS string allows attackers complete Client/Server compromise.",
+                    "bad_code": l,
+                    "fix_code": 'JSON.parse(safeData); // Replace eval with structured JSON parsing'
+                })
+                sec_count += 1
+
+            if re.search(r'child_process\.(exec|execSync)\(', l) or "shell: true" in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "OS Command Injection (`child_process.exec`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-78: OS Command Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Executing shell commands with string concatenation allows attacker arbitrary OS command execution.",
+                    "bad_code": l,
+                    "fix_code": 'child_process.execFile("tar", ["-czf", "out.tar.gz", folder]);'
+                })
+                sec_count += 1
+
+            if re.search(r'catch\s*(\([^)]*\))?\s*\{\s*\}', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Empty Catch Block (Silent Error Swallowing)",
+                    "category": "Reliability",
+                    "cwe": "CWE-391: Unchecked Error Condition",
+                    "owasp": "A09:2021-Security Logging & Monitoring",
+                    "description": "Catch block is completely empty and silently drops exceptions, masking critical failures.",
+                    "bad_code": l,
+                    "fix_code": 'catch (err) {\n    console.error("Operation failed:", err);\n    throw err;\n}'
+                })
+                err_count += 1
+
+        # ─── JAVA / C# / KOTLIN RULES ───
+        if lang_key in ("java", "csharp", "kotlin"):
+            if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE).*\+\s*\w+', l) or ("executeQuery(" in l and "+" in l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "SQL Injection via String Concatenation",
+                    "category": "AppSec",
+                    "cwe": "CWE-89: SQL Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "SQL query built with string concatenation instead of `PreparedStatement`.",
+                    "bad_code": l,
+                    "fix_code": 'PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE id = ?");\nstmt.setString(1, userId);'
+                })
+                sec_count += 1
+
+            if re.search(r'Runtime\.getRuntime\(\)\.exec\(|ProcessBuilder\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "OS Command Injection (`Runtime.exec`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-78: OS Command Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Executing system commands without parameter separation allows arbitrary command execution.",
+                    "bad_code": l,
+                    "fix_code": 'ProcessBuilder pb = new ProcessBuilder("tar", "-czf", "backup.tar.gz", folder);'
+                })
+                sec_count += 1
+
+            if re.search(r'catch\s*\([A-Za-z0-9_.]+\s+[A-Za-z0-9_]+\)\s*\{\s*\}', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Silent Exception Swallowing in Catch Block",
+                    "category": "Reliability",
+                    "cwe": "CWE-391: Unchecked Error Condition",
+                    "owasp": "A09:2021-Security Logging & Monitoring",
+                    "description": "Catch block swallows exceptions silently without logging or rethrowing.",
+                    "bad_code": l,
+                    "fix_code": 'catch (Exception e) {\n    logger.error("Failed to process request", e);\n    throw new ServiceException(e);\n}'
+                })
+                err_count += 1
+
+        # ─── GO RULES ───
+        if lang_key == "go":
+            if re.search(r'\b[a-zA-Z0-9_]+,\s*_\s*:?=', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Unhandled Error Return Value (`_`)",
+                    "category": "Reliability",
+                    "cwe": "CWE-391: Unchecked Error Condition",
+                    "owasp": "Code Correctness",
+                    "description": "Ignoring returned error (`_`) can cause silent data corruption or panics downstream.",
+                    "bad_code": l,
+                    "fix_code": 'val, err := doSomething()\nif err != nil {\n    return fmt.Errorf("failed: %w", err)\n}'
+                })
+                err_count += 1
+            if "fmt.Sprintf" in l and re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "SQL Injection via fmt.Sprintf",
+                    "category": "AppSec",
+                    "cwe": "CWE-89: SQL Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "SQL query formatted directly with fmt.Sprintf instead of parameterized db.Query(sql, args...).",
+                    "bad_code": l,
+                    "fix_code": 'db.Query("SELECT id FROM accounts WHERE username = $1", username)'
+                })
+                sec_count += 1
+
+        # ─── RUST RULES ───
+        if lang_key == "rust":
+            if "unsafe {" in l or "unsafe{" in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Unsafe Block Usage",
+                    "category": "Reliability",
+                    "cwe": "CWE-1188: Insecure State",
+                    "owasp": "Memory Safety",
+                    "description": "`unsafe` block bypasses Rust memory safety invariants. Verify manual pointer safety.",
+                    "bad_code": l,
+                    "fix_code": "// Verify invariants or use safe Rust abstractions"
+                })
+                err_count += 1
+            if re.search(r'\.(unwrap|expect)\(\)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Potential Panic on `.unwrap()` / `.expect()`",
+                    "category": "Reliability",
+                    "cwe": "CWE-754: Improper Check for Unusual or Exceptional Conditions",
+                    "owasp": "Code Correctness",
+                    "description": "Calling `.unwrap()` on `Option`/`Result` causes immediate thread panic if value is `None`/`Err`.",
+                    "bad_code": l,
+                    "fix_code": 'let val = match opt {\n    Some(v) => v,\n    None => return Err(MyError::NotFound),\n};'
+                })
+                err_count += 1
+
+        # ─── PHP RULES ───
+        if lang_key == "php":
+            if re.search(r'\b(eval|passthru|shell_exec|exec|system)\s*\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Remote Code / Command Execution (`eval`/`system`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-95: Eval Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Dynamic execution of arbitrary PHP code or OS commands from user input.",
+                    "bad_code": l,
+                    "fix_code": 'Avoid eval/exec; use safe predefined APIs.'
+                })
+                sec_count += 1
+            if re.search(r'\b(include|require|include_once|require_once)\s*\(\s*\$_(?:GET|POST|REQUEST)', l) or "include($page)" in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Local/Remote File Inclusion (LFI/RFI)",
+                    "category": "AppSec",
+                    "cwe": "CWE-98: Improper Control of Filename for Include/Require",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Including dynamic files directly from user input allows arbitrary code execution.",
+                    "bad_code": l,
+                    "fix_code": '$allowed = ["home" => "home.php"];\ninclude($allowed[$_GET["page"]]);'
+                })
+                sec_count += 1
+            if re.search(r'\becho\s+.*\$_(?:GET|POST|REQUEST)', l) or 'echo "<h1>Welcome " . $_GET' in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Reflected Cross-Site Scripting (XSS)",
+                    "category": "AppSec",
+                    "cwe": "CWE-79: Cross-Site Scripting (XSS)",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Unsanitized user input echoed directly to output response.",
+                    "bad_code": l,
+                    "fix_code": 'echo "<h1>Welcome " . htmlspecialchars($_GET["user"], ENT_QUOTES, "UTF-8") . "</h1>";'
+                })
+                sec_count += 1
+
+        # ─── PYTHON RULES (Only if Python) ───
+        if lang_key == "python":
+            if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE).*(f["\']|%\s*\w+|\.format\(|\+\s*\w+)', l) or ("execute(" in l and f"f\"" in l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "SQL Injection (Unescaped Interpolation)",
+                    "category": "AppSec",
+                    "cwe": "CWE-89: SQL Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "User input is directly concatenated into SQL query. Attacker can read or wipe database.",
+                    "bad_code": l,
+                    "fix_code": 'cursor.execute("SELECT * FROM orders WHERE customer_name = ?", (username,))'
+                })
+                sec_count += 1
+
+            if re.search(r'subprocess\.(run|Popen|call|check_output)\(.*shell\s*=\s*True', l) or re.search(r'os\.system\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "OS Command Injection (`shell=True`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-78: OS Command Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Dangerous execution of shell commands with untrusted string formatting.",
+                    "bad_code": l,
+                    "fix_code": 'subprocess.run(["tar", "-czf", "backup.tar.gz", safe_folder], shell=False)'
+                })
+                sec_count += 1
+
+            if re.search(r'\b(eval|exec|pickle\.loads)\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Dangerous Dynamic Code Execution (`eval`/`exec`)",
+                    "category": "AppSec",
+                    "cwe": "CWE-95: Eval Injection",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Dynamic execution of arbitrary code or untrusted serialized objects allows remote code execution (RCE).",
+                    "bad_code": l,
+                    "fix_code": 'import ast\nparsed_val = ast.literal_eval(safe_input)'
+                })
+                sec_count += 1
+
+            if re.search(r'^\s*except\s*:\s*(pass)?', raw_l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Silent Exception Swallowing (`except: pass`)",
+                    "category": "Reliability",
+                    "cwe": "CWE-391: Unchecked Error Condition",
+                    "owasp": "A09:2021-Security Logging & Monitoring",
+                    "description": "Bare `except:` silently hides all critical crashes and errors, preventing telemetry.",
+                    "bad_code": l,
+                    "fix_code": 'except Exception as exc:\n    logger.error(f"Failed operation: {exc}")\n    raise'
+                })
+                err_count += 1
+
+            if re.search(r'\.get\([^)]+\)\.(upper|lower|split|strip|get)\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Unchecked NoneType Dereference Crash",
+                    "category": "Reliability",
+                    "cwe": "CWE-476: NULL Pointer Dereference",
+                    "owasp": "Code Quality / Stability",
+                    "description": "Chained method call on dictionary `.get()` raises `AttributeError` if key is missing.",
+                    "bad_code": l,
+                    "fix_code": 'val = order_data.get("id")\norder_id = val.upper() if val is not None else None'
+                })
+                err_count += 1
+
+            if re.search(r'def\s+\w+\(.*=\s*(\[\]|\{\})\)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Mutable Default Argument Logic Bug",
+                    "category": "Logic / Bug",
+                    "cwe": "CWE-1188: Default Mutable State",
+                    "owasp": "Code Correctness",
+                    "description": "Default mutable arguments (`=[]` or `={}`) are shared across all function calls, creating unexpected state bugs.",
+                    "bad_code": l,
+                    "fix_code": "def process_data(items=None):\n    if items is None:\n        items = []"
+                })
+                err_count += 1
 
     # Sort critical first
     sev_weights = {"critical": 0, "warning": 1, "info": 2}
     findings = sorted(findings, key=lambda x: (sev_weights.get(x["severity"], 3), x["line"]))
 
-    stage_traces["Stage 1: Understand"] = {"summary": summary, "functions": functions_found, "loc": len(lines)}
-    stage_traces["Stage 2: Security Audit"] = {"appsec_vulnerabilities": sec_count, "threat_models": ["CWE-89", "CWE-798", "CWE-78", "CWE-95", "CWE-295"]}
+    stage_traces["Stage 1: Understand"] = {"summary": summary, "functions": functions_found, "loc": len(lines), "language": lang_display}
+    stage_traces["Stage 2: Security Audit"] = {"appsec_vulnerabilities": sec_count, "threat_models": ["CWE-89", "CWE-798", "CWE-78", "CWE-120", "CWE-79", "CWE-95", "CWE-295"]}
     stage_traces["Stage 3: Reliability Engine"] = {"reliability_issues": err_count, "crashes_prevented": err_count}
     stage_traces["Stage 4: Guardrails"] = {"total_findings": len(findings), "injection_neutralized": injection_detected}
 
-    meta = {"summary": summary, "injection_detected": injection_detected}
+    meta = {"summary": summary, "injection_detected": injection_detected, "language": lang_display}
     return meta, findings, stage_traces
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -587,13 +1013,14 @@ Analyze the provided code and return ONLY valid JSON with keys:
 - "findings" (list of objects with: "line" (int), "severity" ("critical"|"warning"|"info"), "title" (string), "category" ("AppSec"|"Reliability"|"Style"), "cwe" (e.g. "CWE-89"), "owasp" (string), "description" (string), "bad_code" (exact problematic line), "fix_code" (safe replacement code))."""
 
 def call_openai(code: str, api_key: str, model_name: str, filename: str) -> tuple[dict, list, dict]:
+    lang_key, lang_name = detect_language(code, filename)
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "model": model_name,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Filename: `{filename}`\n\n```python\n{code}\n```"}
+            {"role": "user", "content": f"Language: {lang_name}\nFilename: `{filename}`\n\n```{lang_key}\n{code}\n```"}
         ],
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
@@ -603,17 +1030,18 @@ def call_openai(code: str, api_key: str, model_name: str, filename: str) -> tupl
         resp.raise_for_status()
         data = resp.json()
         parsed = json.loads(data["choices"][0]["message"]["content"])
-        meta = {"summary": parsed.get("summary", "OpenAI Review Complete"), "injection_detected": False}
+        meta = {"summary": parsed.get("summary", f"OpenAI {lang_name} Review Complete"), "injection_detected": False, "language": lang_name}
         findings = parsed.get("findings", [])
-        traces = {"Stage 1: Understand": {"summary": meta["summary"]}, "Stage 2 & 3: Model Review": {"engine": f"OpenAI {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
+        traces = {"Stage 1: Understand": {"summary": meta["summary"], "language": lang_name}, "Stage 2 & 3: Model Review": {"engine": f"OpenAI {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
         return meta, findings, traces
 
 def call_gemini(code: str, api_key: str, model_name: str, filename: str) -> tuple[dict, list, dict]:
+    lang_key, lang_name = detect_language(code, filename)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{
-            "parts": [{"text": f"{SYSTEM_PROMPT}\n\nReview this file `{filename}`:\n\n```python\n{code}\n```"}]
+            "parts": [{"text": f"{SYSTEM_PROMPT}\n\nReview this {lang_name} file `{filename}`:\n\n```{lang_key}\n{code}\n```"}]
         }],
         "generationConfig": {"response_mime_type": "application/json", "temperature": 0.1}
     }
@@ -623,12 +1051,13 @@ def call_gemini(code: str, api_key: str, model_name: str, filename: str) -> tupl
         data = resp.json()
         raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
         parsed = json.loads(raw_text)
-        meta = {"summary": parsed.get("summary", "Gemini Review Complete"), "injection_detected": False}
+        meta = {"summary": parsed.get("summary", f"Gemini {lang_name} Review Complete"), "injection_detected": False, "language": lang_name}
         findings = parsed.get("findings", [])
-        traces = {"Stage 1: Understand": {"summary": meta["summary"]}, "Stage 2 & 3: Model Review": {"engine": f"Google Gemini {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
+        traces = {"Stage 1: Understand": {"summary": meta["summary"], "language": lang_name}, "Stage 2 & 3: Model Review": {"engine": f"Google Gemini {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
         return meta, findings, traces
 
 def call_claude(code: str, api_key: str, model_name: str, filename: str) -> tuple[dict, list, dict]:
+    lang_key, lang_name = detect_language(code, filename)
     url = "https://api.anthropic.com/v1/messages"
     headers = {
         "x-api-key": api_key,
@@ -640,7 +1069,7 @@ def call_claude(code: str, api_key: str, model_name: str, filename: str) -> tupl
         "max_tokens": 3000,
         "system": SYSTEM_PROMPT,
         "messages": [
-            {"role": "user", "content": f"Review this code in `{filename}` and respond ONLY in valid JSON:\n\n```python\n{code}\n```"}
+            {"role": "user", "content": f"Review this {lang_name} code in `{filename}` and respond ONLY in valid JSON:\n\n```{lang_key}\n{code}\n```"}
         ]
     }
     with httpx.Client(timeout=45.0) as client:
@@ -651,19 +1080,20 @@ def call_claude(code: str, api_key: str, model_name: str, filename: str) -> tupl
         match = re.search(r"\{.*\}", raw_text, re.DOTALL)
         clean_json = match.group(0) if match else raw_text
         parsed = json.loads(clean_json)
-        meta = {"summary": parsed.get("summary", "Claude Review Complete"), "injection_detected": False}
+        meta = {"summary": parsed.get("summary", f"Claude {lang_name} Review Complete"), "injection_detected": False, "language": lang_name}
         findings = parsed.get("findings", [])
-        traces = {"Stage 1: Understand": {"summary": meta["summary"]}, "Stage 2 & 3: Model Review": {"engine": f"Anthropic {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
+        traces = {"Stage 1: Understand": {"summary": meta["summary"], "language": lang_name}, "Stage 2 & 3: Model Review": {"engine": f"Anthropic {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
         return meta, findings, traces
 
 def call_groq(code: str, api_key: str, model_name: str, filename: str) -> tuple[dict, list, dict]:
+    lang_key, lang_name = detect_language(code, filename)
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "model": model_name,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Filename: `{filename}`\n\n```python\n{code}\n```"}
+            {"role": "user", "content": f"Language: {lang_name}\nFilename: `{filename}`\n\n```{lang_key}\n{code}\n```"}
         ],
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
@@ -673,9 +1103,9 @@ def call_groq(code: str, api_key: str, model_name: str, filename: str) -> tuple[
         resp.raise_for_status()
         data = resp.json()
         parsed = json.loads(data["choices"][0]["message"]["content"])
-        meta = {"summary": parsed.get("summary", "Groq Review Complete"), "injection_detected": False}
+        meta = {"summary": parsed.get("summary", f"Groq {lang_name} Review Complete"), "injection_detected": False, "language": lang_name}
         findings = parsed.get("findings", [])
-        traces = {"Stage 1: Understand": {"summary": meta["summary"]}, "Stage 2 & 3: Model Review": {"engine": f"Groq {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
+        traces = {"Stage 1: Understand": {"summary": meta["summary"], "language": lang_name}, "Stage 2 & 3: Model Review": {"engine": f"Groq {model_name}"}, "Stage 4: Guardrails": {"status": "Complete"}}
         return meta, findings, traces
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -768,15 +1198,35 @@ override_code = st.session_state.pop("target_override", None)
 if mode == "🧪 Preset Scenarios":
     scenario = st.selectbox("Select Scenario to Inspect:", list(PRESET_SNIPPETS.keys()), index=0)
     target_code = override_code or PRESET_SNIPPETS[scenario]
-    active_filename = "vulnerable_app.py" if "Vulnerable" in scenario else ("clean_app.py" if "Clean" in scenario else "injection_test.py")
+    if "Python" in scenario:
+        active_filename = "app.py"
+    elif "C/C++" in scenario:
+        active_filename = "process_data.cpp"
+    elif "Java" in scenario:
+        active_filename = "OrderService.java"
+    elif "JavaScript" in scenario or "TypeScript" in scenario:
+        active_filename = "profile.js"
+    elif "Go" in scenario:
+        active_filename = "main.go"
+    elif "Rust" in scenario:
+        active_filename = "lib.rs"
+    elif "PHP" in scenario:
+        active_filename = "index.php"
+    elif "Clean" in scenario:
+        active_filename = "clean_app.py"
+    else:
+        active_filename = "injection_test.py"
 
 elif mode == "✍️ Custom Code / Diff Editor":
-    c1, c2 = st.columns([1, 3])
+    c1, c2 = st.columns([1, 2])
     with c1:
-        active_filename = st.text_input("Target Filename:", value="payment_service.py")
+        active_filename = st.text_input("Target Filename (e.g. app.py, main.cpp, Service.java, api.js, main.go):", value="payment_service.py")
+    
+    default_editor_code = override_code or PRESET_SNIPPETS["🐍 Python: Vulnerable App (SQLi + Secret + Bare Except)"]
     with c2:
-        st.caption("Paste any raw Python code or Git Unified Diff:")
-    target_code = st.text_area("Code Editor", value=override_code or PRESET_SNIPPETS["🔴 Vulnerable App (SQLi + Secret + Bare Except + Memory Leak)"], height=220, label_visibility="collapsed")
+        det_key, det_name = detect_language(default_editor_code, active_filename)
+        st.markdown(f"<div style='padding: 6px 12px; background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 8px; margin-top: 24px; font-size: 0.88rem;'>🏷️ <b>Detected Engine:</b> <span style='color: #C084FC;'>{det_name}</span></div>", unsafe_allow_html=True)
+    target_code = st.text_area("Code Editor", value=default_editor_code, height=220, label_visibility="collapsed")
 
 elif mode == "🐙 Live GitHub Pull Request":
     gh_c1, gh_c2 = st.columns([2, 1])
@@ -797,7 +1247,7 @@ elif mode == "🐙 Live GitHub Pull Request":
                     st.success(f"✓ Successfully fetched PR #{pr_num} ({len(target_code.splitlines())} lines)!")
             except Exception as e:
                 st.error(f"Fetch failed: {e}")
-    target_code = st.session_state.get("diff", PRESET_SNIPPETS["🔴 Vulnerable App (SQLi + Secret + Bare Except + Memory Leak)"])
+    target_code = st.session_state.get("diff", PRESET_SNIPPETS["🐍 Python: Vulnerable App (SQLi + Secret + Bare Except)"])
 
 # Primary Trigger Button
 st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
@@ -814,24 +1264,39 @@ active_ai_label = provider.split(" (")[0]
 
 try:
     if "Auto-Hybrid" in provider:
-        # Step 1: Run Static AST Rules
+        # Step 1: Run Polyglot Static AST Rules
         static_meta, static_findings, traces = run_static_analysis(target_code, active_filename)
         combined_findings = list(static_findings)
         
         # Step 2: If API key exists, also run Deep AI Logic Analysis
+        ai_ran = False
         if user_api_key.strip():
             try:
                 llm_meta, llm_findings, _ = call_gemini(target_code, user_api_key, "gemini-2.0-flash", active_filename)
-                # Deduplicate and merge
                 existing_lines = {f.get("line") for f in static_findings}
                 for lf in llm_findings:
                     if lf.get("line") not in existing_lines:
                         combined_findings.append(lf)
-                active_ai_label = "Auto-Hybrid (AST Compiler + Gemini AI)"
+                active_ai_label = f"Auto-Hybrid (AST + Gemini AI - {static_meta.get('language', 'Polyglot')})"
+                ai_ran = True
             except Exception:
-                active_ai_label = "Auto-Hybrid (AST Compiler Engine)"
-        else:
-            active_ai_label = "Auto-Hybrid (AST Compiler Engine)"
+                pass
+                
+        if not ai_ran and os.environ.get("GROQ_API_KEY", "").strip():
+            try:
+                groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+                llm_meta, llm_findings, _ = call_groq(target_code, groq_key, "llama-3.1-8b-instant", active_filename)
+                existing_lines = {f.get("line") for f in static_findings}
+                for lf in llm_findings:
+                    if lf.get("line") not in existing_lines:
+                        combined_findings.append(lf)
+                active_ai_label = f"Auto-Hybrid (AST + Groq AI - {static_meta.get('language', 'Polyglot')})"
+                ai_ran = True
+            except Exception:
+                pass
+                
+        if not ai_ran:
+            active_ai_label = f"Auto-Hybrid (Polyglot AST - {static_meta.get('language', 'Polyglot')})"
             
         findings = combined_findings
         meta = static_meta
@@ -850,11 +1315,12 @@ try:
         active_ai_label = f"Groq ({selected_model_name})"
     else:
         meta, findings, traces = run_static_analysis(target_code, active_filename)
-        active_ai_label = "Built-in Hybrid AST Engine"
+        active_ai_label = f"Polyglot AST Engine ({meta.get('language', 'Generic')})"
 except Exception as exc:
     st.warning(f"⚠️ {provider} error: {exc}. Seamlessly switched to Built-in AST Engine.")
     meta, findings, traces = run_static_analysis(target_code, active_filename)
-    active_ai_label = "Built-in Hybrid AST Engine (Fallback)"
+    active_ai_label = f"Polyglot AST Engine ({meta.get('language', 'Generic')})"
+
 
 exec_time_ms = int((time.time() - start_t) * 1000)
 
