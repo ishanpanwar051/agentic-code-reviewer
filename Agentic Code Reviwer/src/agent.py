@@ -26,7 +26,7 @@ from src.config import Settings, get_settings
 from src.diff_parser import chunk_file_diff, parse_unified_diff
 from src.github_client import GitHubClient
 from src.llm import LLMClient
-from src.models import FileDiff, ReviewComment, ReviewResult, StageResult
+from src.models import CodeChunk, FileDiff, ReviewComment, ReviewResult, StageResult
 from src.stages import ErrorHandlingStage, ReviewStage, SecurityStage, UnderstandStage
 
 
