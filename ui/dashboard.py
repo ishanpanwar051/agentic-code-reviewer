@@ -9,13 +9,20 @@ import ast
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
+# Ensure repository root is on sys.path regardless of execution context
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import httpx
 import pandas as pd
 import streamlit as st
+
 
 # Optional Matplotlib
 try:
