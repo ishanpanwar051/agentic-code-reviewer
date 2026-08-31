@@ -51,7 +51,7 @@ except Exception:
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="PR Sage — Enterprise AI Code Reviewer",
+    page_title="PR Sage — AI Code Reviewer",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",

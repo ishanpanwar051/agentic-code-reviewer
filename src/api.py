@@ -19,7 +19,7 @@ from src.models import CodeReviewRequest, PRReviewRequest, ReviewResult
 logger = logging.getLogger("pr_sage.api")
 
 app = FastAPI(
-    title="PR Sage — Agentic AI Code Reviewer API",
+    title="PR Sage — AI Code Reviewer API",
     description="Enterprise REST API & GitHub Webhook Gateway for PR Sage deterministic code reviews.",
     version="2.8.0",
     docs_url="/docs",

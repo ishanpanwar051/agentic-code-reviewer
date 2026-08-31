@@ -1,4 +1,4 @@
-# 🛡️ PR Sage — Enterprise Multi-Stage Agentic AI Code Reviewer
+# 🛡️ PR Sage — AI Code Reviewer
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-009688.svg)](https://fastapi.tiangolo.com)
