@@ -305,6 +305,7 @@ def chunk_file_diff(
         start_line = target_lines[0][0]
         end_line = target_lines[-1][0]
         chunk_lines = [item[1] for item in target_lines]
+        chunk_linenos = [item[0] for item in target_lines]
         added_lines = [item[0] for item in target_lines if item[2]]
 
         return [
@@ -314,6 +315,7 @@ def chunk_file_diff(
                 start_line=start_line,
                 end_line=end_line,
                 lines=chunk_lines,
+                line_numbers=chunk_linenos,
                 added_line_numbers=added_lines,
                 is_partial=False,
             )
@@ -332,6 +334,7 @@ def chunk_file_diff(
         start_line = window[0][0]
         end_line = window[-1][0]
         chunk_lines = [item[1] for item in window]
+        chunk_linenos = [item[0] for item in window]
         added_lines = [item[0] for item in window if item[2]]
 
         chunks.append(
@@ -341,6 +344,7 @@ def chunk_file_diff(
                 start_line=start_line,
                 end_line=end_line,
                 lines=chunk_lines,
+                line_numbers=chunk_linenos,
                 added_line_numbers=added_lines,
                 is_partial=True,
             )

@@ -105,7 +105,58 @@ def test_export_review_reports(tmp_path: Path):
     assert reports["json"].exists()
     assert reports["markdown"].exists()
 
-    md_content = reports["markdown"].read_text(encoding="utf-8")
+    assert md_content != ""
     assert "PR Sage Review Report" in md_content
     assert "Command injection in os.system." in md_content
     assert "owner/repo" in md_content
+
+
+def test_generate_unified_patch():
+    """Verifies that unified diff patches are correctly formatted with Git headers and prefixes."""
+    from src.guardrails import generate_unified_patch
+
+    comments = [
+        ReviewComment(
+            path="src/service.py",
+            line=15,
+            severity="critical",
+            category="security",
+            comment="SQLi flaw",
+            suggested_fix="cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))",
+        ),
+        ReviewComment(
+            path="src/service.py",
+            line=30,
+            severity="warning",
+            category="reliability",
+            comment="Bare except",
+            suggested_fix="except Exception as exc:\n    logger.error(exc)",
+        ),
+    ]
+
+    patch = generate_unified_patch(comments, file_path="src/service.py")
+    assert "diff --git a/src/service.py b/src/service.py" in patch
+    assert "--- a/src/service.py" in patch
+    assert "+++ b/src/service.py" in patch
+    assert "@@ -15,1 +15,1 @@" in patch
+    assert "+ cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))" in patch
+    assert "@@ -30,1 +30,2 @@" in patch
+    assert "+ except Exception as exc:" in patch
+    assert "+     logger.error(exc)" in patch
+
+
+def test_verify_github_webhook_signature():
+    """Verifies HMAC-SHA256 signature calculation and validation."""
+    import hashlib
+    import hmac
+    from src.guardrails import verify_github_webhook_signature
+
+    secret = "super_secret_webhook_key"
+    payload = b'{"action": "opened", "number": 42}'
+    valid_sig = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
+    assert verify_github_webhook_signature(payload, secret, valid_sig) is True
+    assert verify_github_webhook_signature(payload, secret, "sha256=invalid") is False
+    assert verify_github_webhook_signature(payload, "", valid_sig) is False
+    assert verify_github_webhook_signature(payload, secret, None) is False
+

@@ -265,7 +265,7 @@ def run_evaluation(
         # 2. Evaluate raw findings (hypothetical un-capped/un-deduped)
         tp_r, fp_r, fn_r = evaluate_commit_finding(comments, expected_lines, tolerance=0)
         raw_tp += tp_r
-        raw_fp += fp_r + 1  # Raw LLM runs produce extra un-filtered noise
+        raw_fp += fp_r
         raw_fn += fn_r
 
         per_commit_results.append(

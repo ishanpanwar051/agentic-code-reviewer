@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import logging
+import re
 from typing import Any
 from pydantic import BaseModel, Field
 from src.llm import LLMClient
@@ -165,6 +166,21 @@ class BaseStage(ABC):
         raise NotImplementedError
 
     @staticmethod
+    def _format_code_block(ctx: dict[str, Any]) -> str:
+        """Formats code lines with exact line numbers and '+' marker for newly added lines."""
+        lines = ctx.get("lines", [])
+        line_numbers = ctx.get("line_numbers", [])
+        added_lines = ctx.get("added_line_numbers", [])
+        start_line = ctx.get("start_line", 1)
+
+        formatted_lines: list[str] = []
+        for i, line in enumerate(lines):
+            lineno = line_numbers[i] if i < len(line_numbers) else (start_line + i)
+            marker = "+" if lineno in added_lines else " "
+            formatted_lines.append(f"{lineno:4d} {marker} | {line}")
+        return "\n".join(formatted_lines)
+
+    @staticmethod
     def _filter_valid_lines(
         findings: list[ReviewComment],
         valid_line_numbers: list[int],
@@ -204,15 +220,8 @@ class UnderstandStage(BaseStage):
 
     def _build_prompt(self, ctx: dict[str, Any]) -> str:
         file_path = ctx.get("file_path", "unknown")
-        lines = ctx.get("lines", [])
-        added_lines = ctx.get("added_line_numbers", [])
-        start_line = ctx.get("start_line", 1)
         lang = detect_language(file_path)
-
-        formatted_code = "\n".join(
-            f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
-            for i, line in enumerate(lines)
-        )
+        formatted_code = self._format_code_block(ctx)
 
         return (
             f"Analyze the following {lang} code changes in `{file_path}`.\n\n"
@@ -253,16 +262,10 @@ class SecurityStage(BaseStage):
 
     def _build_prompt(self, ctx: dict[str, Any]) -> str:
         file_path = ctx.get("file_path", "unknown")
-        lines = ctx.get("lines", [])
         added_lines = ctx.get("added_line_numbers", [])
-        start_line = ctx.get("start_line", 1)
         understand_notes = ctx.get("understand_notes", "None")
         lang = detect_language(file_path)
-
-        formatted_code = "\n".join(
-            f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
-            for i, line in enumerate(lines)
-        )
+        formatted_code = self._format_code_block(ctx)
 
         return (
             f"File: `{file_path}` ({lang})\n"
@@ -310,17 +313,11 @@ class ErrorHandlingStage(BaseStage):
 
     def _build_prompt(self, ctx: dict[str, Any]) -> str:
         file_path = ctx.get("file_path", "unknown")
-        lines = ctx.get("lines", [])
         added_lines = ctx.get("added_line_numbers", [])
-        start_line = ctx.get("start_line", 1)
         understand_notes = ctx.get("understand_notes", "None")
         security_notes = ctx.get("security_notes", "None")
         lang = detect_language(file_path)
-
-        formatted_code = "\n".join(
-            f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
-            for i, line in enumerate(lines)
-        )
+        formatted_code = self._format_code_block(ctx)
 
         return (
             f"File: `{file_path}` ({lang})\n"
@@ -369,22 +366,16 @@ class ReviewStage(BaseStage):
 
     def _build_prompt(self, ctx: dict[str, Any]) -> str:
         file_path = ctx.get("file_path", "unknown")
-        lines = ctx.get("lines", [])
         added_lines = ctx.get("added_line_numbers", [])
-        start_line = ctx.get("start_line", 1)
         prior_findings: list[ReviewComment] = ctx.get("prior_findings", [])
         understand_notes = ctx.get("understand_notes", "")
         lang = detect_language(file_path)
+        formatted_code = self._format_code_block(ctx)
 
         prior_findings_text = "\n".join(
             f"- Line {f.line} [{f.severity.upper()}] [{f.category.upper()}]: {f.comment}"
             for f in prior_findings
         ) or "None detected in prior stages."
-
-        formatted_code = "\n".join(
-            f"{start_line + i:4d} {'+' if (start_line + i) in added_lines else ' '} | {line}"
-            for i, line in enumerate(lines)
-        )
 
         return (
             f"File: `{file_path}` ({lang})\n"
@@ -402,17 +393,17 @@ class ReviewStage(BaseStage):
         added_lines = ctx.get("added_line_numbers", [])
         prior_findings: list[ReviewComment] = ctx.get("prior_findings", [])
 
-        # Merge prior findings with new comments
-        combined = list(prior_findings) + list(parsed.comments)
+        # Stage 4 comments are the primary consolidated findings; fall back to prior findings if empty
+        candidate_findings = list(parsed.comments) if parsed.comments else list(prior_findings)
 
-        # Deduplicate comments by (line, category, text similarity)
-        seen_keys: set[tuple[int, str]] = set()
+        # Deduplicate comments by (path, line, category, prefix)
+        seen_keys: set[tuple[str, int, str, str]] = set()
         deduped: list[ReviewComment] = []
 
-        for item in combined:
+        for item in candidate_findings:
             item.path = file_path
-            # Deduplicate by line number and rough comment prefix
-            key = (item.line, item.comment[:40].lower())
+            clean_prefix = re.sub(r"[^\w\s]", "", item.comment[:40].lower()).strip()
+            key = (item.path, item.line, item.category, clean_prefix)
             if key not in seen_keys:
                 seen_keys.add(key)
                 deduped.append(item)

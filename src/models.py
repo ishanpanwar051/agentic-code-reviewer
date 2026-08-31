@@ -106,6 +106,10 @@ class CodeChunk(BaseModel):
         default_factory=list,
         description="The code lines contained in this chunk for LLM review.",
     )
+    line_numbers: list[int] = Field(
+        default_factory=list,
+        description="Exact 1-indexed line numbers corresponding to lines in this chunk.",
+    )
     added_line_numbers: list[int] = Field(
         default_factory=list,
         description="Exact new line numbers that were newly added/modified inside this chunk.",

@@ -1,23 +1,15 @@
-"""FastAPI REST API and GitHub Webhook Gateway for PR Sage.
-
-Features:
-- /health: System health and version telemetry.
-- /api/v1/review/code: REST endpoint for synchronous code/diff reviews with telemetry and patch output.
-- /api/v1/review/pr: Orchestrates full GitHub PR reviews.
-- /api/v1/webhooks/github: Production webhook receiver with HMAC-SHA256 signature authentication.
-"""
-
 from __future__ import annotations
 
 import logging
 import os
 import time
 from typing import Any
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, status
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from src.agent import PRSageAgent
-from src.config import get_settings
+from src.config import Settings, get_settings
+from src.db import DatabaseManager
 from src.github_client import GitHubClient
 from src.guardrails import verify_github_webhook_signature
 from src.llm import LLMClient
@@ -34,14 +26,22 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Enable CORS for frontend / web integrations
+# Enable CORS for frontend / web integrations (credentials disabled for wildcard origin)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class FeedbackRequest(BaseModel):
+    """Developer feedback payload."""
+
+    action: str = Field(..., description="'applied', 'dismissed', 'thumbs_up', or 'thumbs_down'")
+    comment_id: int | None = Field(default=None, description="Optional target comment ID")
+    notes: str = Field(default="", description="Optional feedback notes")
 
 
 # =====================================================================
@@ -53,6 +53,7 @@ app.add_middleware(
 def health_check() -> dict[str, Any]:
     """Returns service health status, runtime uptime, and active configuration."""
     settings = get_settings(DRY_RUN=True)
+    db_stats = DatabaseManager.get_instance(settings.DATABASE_PATH).get_statistics()
     return {
         "status": "healthy",
         "service": "pr-sage-agentic-reviewer",
@@ -61,6 +62,7 @@ def health_check() -> dict[str, Any]:
         "dry_run_default": settings.DRY_RUN,
         "max_comments_per_file": settings.MAX_COMMENTS_PER_FILE,
         "max_comments_per_pr": settings.MAX_COMMENTS_PER_PR,
+        "database_stats": db_stats,
     }
 
 
@@ -80,12 +82,11 @@ def review_code_snippet(payload: CodeReviewRequest) -> ReviewResult:
 
     Returns structured findings, line mappings, CWE tags, confidence scores, patch, and telemetry.
     """
-    settings = get_settings(DRY_RUN=True)
-    if payload.model:
-        settings.MODEL_NAME = payload.model
+    custom_model = payload.model or "llama-3.1-8b-instant"
+    settings = Settings(DRY_RUN=True, MODEL_NAME=custom_model)
 
     llm = LLMClient(
-        model=payload.model or settings.MODEL_NAME,
+        model=custom_model,
         api_key=payload.api_key or settings.GROQ_API_KEY,
         base_url=settings.GROQ_BASE_URL,
         timeout=settings.REQUEST_TIMEOUT,
@@ -115,10 +116,11 @@ def review_code_snippet(payload: CodeReviewRequest) -> ReviewResult:
 )
 def review_github_pr(payload: PRReviewRequest) -> ReviewResult:
     """Fetches diff from GitHub, runs 4-stage pipeline, applies guardrails, and optionally posts comments."""
-    settings = get_settings(DRY_RUN=payload.dry_run)
+    custom_model = payload.model or "llama-3.1-8b-instant"
+    settings = Settings(DRY_RUN=payload.dry_run, MODEL_NAME=custom_model)
     github = GitHubClient(token=settings.GITHUB_TOKEN)
     llm = LLMClient(
-        model=payload.model or settings.MODEL_NAME,
+        model=custom_model,
         api_key=settings.GROQ_API_KEY,
         base_url=settings.GROQ_BASE_URL,
         timeout=settings.REQUEST_TIMEOUT,
@@ -142,6 +144,60 @@ def review_github_pr(payload: PRReviewRequest) -> ReviewResult:
 
 
 # =====================================================================
+# Review History & Persistence Endpoints
+# =====================================================================
+
+
+@app.get(
+    "/api/v1/reviews",
+    tags=["History"],
+    summary="List recent code review runs",
+)
+def list_reviews(limit: int = Query(default=20, ge=1, le=100)) -> list[dict[str, Any]]:
+    """Retrieves recent review runs and telemetry from the database."""
+    settings = get_settings(DRY_RUN=True)
+    db = DatabaseManager.get_instance(settings.DATABASE_PATH)
+    return db.list_recent_reviews(limit=limit)
+
+
+@app.get(
+    "/api/v1/reviews/{review_id}",
+    tags=["History"],
+    summary="Get detailed review by ID",
+)
+def get_review_detail(review_id: int) -> dict[str, Any]:
+    """Retrieves a single review record and all associated line comments."""
+    settings = get_settings(DRY_RUN=True)
+    db = DatabaseManager.get_instance(settings.DATABASE_PATH)
+    review = db.get_review(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail=f"Review #{review_id} not found.")
+    return review
+
+
+@app.post(
+    "/api/v1/reviews/{review_id}/feedback",
+    tags=["History"],
+    summary="Record developer feedback on review",
+)
+def submit_feedback(review_id: int, payload: FeedbackRequest) -> dict[str, Any]:
+    """Records developer acceptance/dismissal feedback for ML fine-tuning and audit."""
+    settings = get_settings(DRY_RUN=True)
+    db = DatabaseManager.get_instance(settings.DATABASE_PATH)
+    review = db.get_review(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail=f"Review #{review_id} not found.")
+
+    feedback_id = db.record_feedback(
+        review_id=review_id,
+        comment_id=payload.comment_id,
+        action=payload.action,
+        notes=payload.notes,
+    )
+    return {"status": "recorded", "feedback_id": feedback_id}
+
+
+# =====================================================================
 # GitHub Webhook Endpoint
 # =====================================================================
 
@@ -149,7 +205,7 @@ def review_github_pr(payload: PRReviewRequest) -> ReviewResult:
 def _process_webhook_pr(owner: str, repo: str, pr_number: int) -> None:
     """Background task executing PR Sage on webhook trigger."""
     logger.info(f"Webhook worker processing {owner}/{repo} PR #{pr_number}")
-    settings = get_settings(DRY_RUN=False)
+    settings = Settings(DRY_RUN=False)
     github = GitHubClient(token=settings.GITHUB_TOKEN)
     llm = LLMClient(
         model=settings.MODEL_NAME,
@@ -191,6 +247,12 @@ async def github_webhook_handler(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid HMAC-SHA256 webhook signature.",
             )
+    elif not os.getenv("ALLOW_UNAUTHENTICATED_WEBHOOKS", "false").lower() == "true":
+        logger.warning("GITHUB_WEBHOOK_SECRET is not configured on server.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Webhook secret not configured on server.",
+        )
 
     # Ping event response
     if x_github_event == "ping":

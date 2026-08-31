@@ -39,6 +39,7 @@ class LLMClient:
         temperature: float = 0.2,
         timeout: float = 120.0,
         max_retries: int = 2,
+        keep_alive: str | int = "5m",
         client: httpx.Client | None = None,
     ) -> None:
         self.model = model
@@ -47,6 +48,7 @@ class LLMClient:
         self.temperature = temperature
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
+        self.keep_alive = keep_alive
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -66,9 +68,11 @@ class LLMClient:
         prompt: str,
         system: str | None = None,
         format: dict[str, Any] | str | None = None,
+        temperature: float | None = None,
     ) -> str:
         """Sends a completion request to Groq/OpenAI or local Ollama."""
         is_ollama = "11434" in self.base_url or "ollama" in self.base_url.lower()
+        effective_temp = temperature if temperature is not None else self.temperature
 
         messages: list[dict[str, str]] = []
         if system:
@@ -81,8 +85,8 @@ class LLMClient:
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
-                "keep_alive": 0,
-                "options": {"temperature": self.temperature},
+                "keep_alive": self.keep_alive,
+                "options": {"temperature": effective_temp},
             }
             if format is not None:
                 payload["format"] = "json"
@@ -91,7 +95,7 @@ class LLMClient:
             payload = {
                 "model": self.model,
                 "messages": messages,
-                "temperature": self.temperature,
+                "temperature": effective_temp,
                 "stream": False,
             }
             if format is not None:

@@ -121,6 +121,18 @@ class Settings(BaseSettings):
         default=False,
         description="If True, performs analysis without posting reviews to GitHub API.",
     )
+    DATABASE_PATH: str = Field(
+        default="pr_sage.db",
+        description="Path to SQLite persistence database file.",
+    )
+    OLLAMA_KEEP_ALIVE: str = Field(
+        default="5m",
+        description="Ollama model keep-alive duration (e.g. '5m', '0', '-1').",
+    )
+    CORS_ORIGINS: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description="Allowed CORS origins for API gateway.",
+    )
     REQUEST_TIMEOUT: float = Field(
         default=30.0,
         ge=1.0,
@@ -184,11 +196,10 @@ def should_skip_path(path: str, skip_patterns: list[str]) -> bool:
 
     for pattern in skip_patterns:
         norm_pattern = pattern.replace("\\", "/").lstrip("/")
-        # Match entire path or matching basename
         if fnmatch.fnmatch(normalized_path, norm_pattern) or fnmatch.fnmatch(basename, norm_pattern):
             return True
-        # Match directory prefix pattern (e.g. 'dist/*' matching 'dist/sub/file.js')
-        if fnmatch.fnmatch(normalized_path, f"*{norm_pattern}"):
+        clean_dir = norm_pattern.rstrip("/*")
+        if clean_dir and (normalized_path.startswith(f"{clean_dir}/") or f"/{clean_dir}/" in f"/{normalized_path}"):
             return True
     return False
 

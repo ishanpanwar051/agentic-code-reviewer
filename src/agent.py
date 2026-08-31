@@ -15,15 +15,18 @@ Interview Rationale (WHY):
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from pathlib import Path
+import re
 import time
 from typing import Any
 from rich.console import Console
 from rich.table import Table
 from pydantic import BaseModel, Field
 from src.config import Settings, get_settings
+from src.db import DatabaseManager
 from src.diff_parser import chunk_file_diff, parse_unified_diff
 from src.github_client import GitHubClient
 from src.guardrails import apply_guardrails, generate_unified_patch, sanitize_untrusted_input
@@ -34,6 +37,106 @@ from src.stages import ErrorHandlingStage, ReviewStage, SecurityStage, Understan
 
 logger = logging.getLogger("pr_sage.agent")
 console = Console()
+
+
+def _static_ast_audit(code: str, filename: str) -> list[ReviewComment]:
+    """Offline Python AST and security pattern scanner for resilient zero-API-key fallback."""
+    findings: list[ReviewComment] = []
+    lines = code.splitlines()
+
+    # 1. AST Syntax Check
+    if filename.endswith((".py", ".pyw")):
+        try:
+            ast.parse(code)
+        except SyntaxError as syn:
+            findings.append(
+                ReviewComment(
+                    path=filename,
+                    line=syn.lineno or 1,
+                    severity="critical",
+                    category="bug",
+                    cwe_id="CWE-1188",
+                    comment=f"SyntaxError: {syn.msg}. Code fails to compile.",
+                    suggested_fix=None,
+                    confidence=0.99,
+                )
+            )
+
+    # 2. Pattern Scans
+    for idx, raw_line in enumerate(lines, start=1):
+        line = raw_line.strip()
+        # SQL Injection
+        if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE).*(f["\']|%\s*\w+|\.format\(|\+\s*\w+)', line) or ("execute(" in line and 'f"' in line):
+            findings.append(
+                ReviewComment(
+                    path=filename,
+                    line=idx,
+                    severity="critical",
+                    category="security",
+                    cwe_id="CWE-89",
+                    comment="SQL Injection Risk: SQL query constructed via unescaped string interpolation.",
+                    suggested_fix="cursor.execute('SELECT * FROM table WHERE col = ?', (param,))",
+                    confidence=0.95,
+                )
+            )
+        # Hardcoded Secret Key
+        if re.search(r'(?i)(secret_key|api_key|password|jwt_secret|private_key|token|auth_token)\s*[:=]\s*["\'][a-zA-Z0-9_\-!@#$]{8,}["\']', line):
+            findings.append(
+                ReviewComment(
+                    path=filename,
+                    line=idx,
+                    severity="critical",
+                    category="security",
+                    cwe_id="CWE-798",
+                    comment="Hardcoded Secret: Sensitive token or credential is hardcoded in source code.",
+                    suggested_fix='import os\nAPI_KEY = os.getenv("API_KEY", "")',
+                    confidence=0.95,
+                )
+            )
+        # Bare except
+        if re.search(r'^\s*except\s*:\s*(pass)?', raw_line):
+            findings.append(
+                ReviewComment(
+                    path=filename,
+                    line=idx,
+                    severity="warning",
+                    category="reliability",
+                    cwe_id="CWE-391",
+                    comment="Silent Exception Swallowing: Bare `except:` drops all unhandled exceptions without logging.",
+                    suggested_fix="except Exception as exc:\n    logger.error(f'Error: {exc}')\n    raise",
+                    confidence=0.95,
+                )
+            )
+        # Unchecked None dereference
+        if re.search(r'\.get\([^)]+\)\.(upper|lower|split|strip|get)\(', line):
+            findings.append(
+                ReviewComment(
+                    path=filename,
+                    line=idx,
+                    severity="warning",
+                    category="reliability",
+                    cwe_id="CWE-476",
+                    comment="Unchecked NoneType Dereference: Chained call on dictionary `.get()` may raise AttributeError.",
+                    suggested_fix='val = data.get("key")\nres = val.upper() if val is not None else None',
+                    confidence=0.85,
+                )
+            )
+        # Command Injection
+        if re.search(r'subprocess\.(run|Popen|call|check_output)\(.*shell\s*=\s*True', line) or re.search(r'os\.system\(', line):
+            findings.append(
+                ReviewComment(
+                    path=filename,
+                    line=idx,
+                    severity="critical",
+                    category="security",
+                    cwe_id="CWE-78",
+                    comment="OS Command Injection: `shell=True` or `os.system` with dynamic arguments allows arbitrary command execution.",
+                    suggested_fix='subprocess.run(["cmd", "arg1", "arg2"], shell=False)',
+                    confidence=0.95,
+                )
+            )
+
+    return findings
 
 
 # =====================================================================
@@ -84,7 +187,9 @@ class PRSageAgent:
             base_url=self.settings.GROQ_BASE_URL,
             timeout=self.settings.REQUEST_TIMEOUT,
             max_retries=self.settings.MAX_RETRIES,
+            keep_alive=self.settings.OLLAMA_KEEP_ALIVE,
         )
+        self.db = DatabaseManager.get_instance(self.settings.DATABASE_PATH)
 
         # Initialize sequential pipeline stages
         self.stage_understand = UnderstandStage()
@@ -111,13 +216,15 @@ class PRSageAgent:
         clean_code, injection_detected = sanitize_untrusted_input(code)
 
         lines = clean_code.splitlines()
+        line_numbers = list(range(1, len(lines) + 1))
         chunk = CodeChunk(
             chunk_id=0,
             file_path=filename,
             start_line=1,
             end_line=len(lines),
             lines=lines,
-            added_line_numbers=list(range(1, len(lines) + 1)),
+            line_numbers=line_numbers,
+            added_line_numbers=line_numbers,
             is_partial=False,
         )
 
@@ -125,12 +232,14 @@ class PRSageAgent:
         if injection_detected:
             console.print("[bold red]⚠️ Adversarial prompt injection detected and neutralized.[/bold red]")
 
+        used_model = self.settings.MODEL_NAME
         try:
             chunk_findings, chunk_note = self._process_chunk(chunk)
         except Exception as exc:
             logger.warning(f"LLM review failed: {exc}. Falling back to AST compiler engine.")
-            chunk_findings = []
+            chunk_findings = _static_ast_audit(clean_code, filename)
             chunk_note = "AST fallback"
+            used_model = "ast-fallback"
 
         # Apply guardrails with confidence filtering
         final_comments = apply_guardrails(
@@ -151,7 +260,7 @@ class PRSageAgent:
             total_tokens=est_tokens,
             latency_ms=latency_ms,
             estimated_cost_usd=est_cost,
-            model_name=self.settings.MODEL_NAME,
+            model_name=used_model,
         )
 
         final_summary = f"## 🤖 PR Sage Review\nReviewed `{filename}` ({len(lines)} LOC) in {latency_ms}ms.\n\n"
@@ -168,11 +277,13 @@ class PRSageAgent:
             patch_content=patch,
         )
 
+        # Output JSON and SQLite persistence
         output_path = Path("review_output.json")
         output_path.write_text(review_result.model_dump_json(indent=2), encoding="utf-8")
+        self.db.save_review(review_result, repo="local/workspace", pr_number=0, filename=filename)
 
         self._print_summary_table(review_result)
-        console.print(f"[bold green]✓ Review complete ({latency_ms}ms). Saved findings to `{output_path}`[/bold green]")
+        console.print(f"[bold green]✓ Review complete ({latency_ms}ms). Saved findings to `{output_path}` and database.[/bold green]")
         return review_result
 
     def run(
@@ -191,14 +302,19 @@ class PRSageAgent:
         if effective_dry_run:
             console.print("[yellow]⚡ Running in DRY-RUN mode (reviews will not be posted to GitHub).[/yellow]")
 
-        # 1. Fetch PR Metadata & Unified Diff
+        # 1. Fetch PR Metadata & Unified Diff with Sanitization
         pr_meta = self.github.fetch_pr(target_owner, target_repo, pr_number)
         head_sha = pr_meta.get("head", {}).get("sha", "HEAD")
-        pr_title = pr_meta.get("title", f"PR #{pr_number}")
+        raw_pr_title = pr_meta.get("title", f"PR #{pr_number}")
+        pr_title, title_injected = sanitize_untrusted_input(raw_pr_title)
         raw_diff = self.github.fetch_pr_diff(target_owner, target_repo, pr_number)
+        clean_diff, diff_injected = sanitize_untrusted_input(raw_diff)
+
+        if title_injected or diff_injected:
+            console.print("[bold red]⚠️ Adversarial prompt injection detected in PR and neutralized.[/bold red]")
 
         # 2. Deterministic Diff Parsing & Filtering
-        file_diffs = parse_unified_diff(raw_diff, skip_patterns=self.settings.SKIP_PATHS)
+        file_diffs = parse_unified_diff(clean_diff, skip_patterns=self.settings.SKIP_PATHS)
 
         state = AgentState(
             pr_number=pr_number,
@@ -273,6 +389,9 @@ class PRSageAgent:
         )
 
         final_summary = self._generate_summary(pr_title, pr_number, len(file_diffs), final_comments)
+        if title_injected or diff_injected:
+            final_summary += "\n\n🛡️ *Adversarial prompt injection directives neutralized.*"
+
         patch = generate_unified_patch(final_comments)
 
         review_result = ReviewResult(
@@ -282,11 +401,18 @@ class PRSageAgent:
             patch_content=patch,
         )
 
-        # 5. Output / Posting
+        # 5. Output / Posting & Database Record
+        output_path = Path("review_output.json")
+        output_path.write_text(review_result.model_dump_json(indent=2), encoding="utf-8")
+        self.db.save_review(
+            review_result=review_result,
+            repo=f"{target_owner}/{target_repo}",
+            pr_number=pr_number,
+            commit_sha=head_sha,
+        )
+
         if effective_dry_run:
-            output_path = Path("review_output.json")
-            output_path.write_text(review_result.model_dump_json(indent=2), encoding="utf-8")
-            console.print(f"\n[bold green]✓ Dry run complete. Saved {len(final_comments)} review findings to `{output_path}`[/bold green]")
+            console.print(f"\n[bold green]✓ Dry run complete. Saved {len(final_comments)} review findings to `{output_path}` and database.[/bold green]")
         else:
             self._submit_github_review(
                 owner=target_owner,
@@ -306,6 +432,7 @@ class PRSageAgent:
         ctx: dict[str, Any] = {
             "file_path": chunk.file_path,
             "lines": chunk.lines,
+            "line_numbers": getattr(chunk, "line_numbers", []),
             "added_line_numbers": chunk.added_line_numbers,
             "start_line": chunk.start_line,
         }
@@ -394,27 +521,6 @@ class PRSageAgent:
             parts = self.settings.REPO.split("/", 1)
             return parts[0], parts[1]
         return "unknown-owner", "unknown-repo"
-
-    def _apply_file_guardrails(self, findings: list[ReviewComment], file_path: str) -> list[ReviewComment]:
-        """Deduplicates comments on a single file and enforces MAX_COMMENTS_PER_FILE cap."""
-        seen: set[tuple[int, str]] = set()
-        deduped: list[ReviewComment] = []
-        for f in findings:
-            key = (f.line, f.comment[:30].strip().lower())
-            if key not in seen:
-                seen.add(key)
-                deduped.append(f)
-        severity_order = {"critical": 0, "warning": 1, "info": 2}
-        deduped.sort(key=lambda x: (severity_order.get(x.severity, 3), x.line))
-        max_file = self.settings.MAX_COMMENTS_PER_FILE
-        return deduped[:max_file] if len(deduped) > max_file else deduped
-
-    def _apply_global_guardrails(self, all_findings: list[ReviewComment]) -> list[ReviewComment]:
-        """Sorts all findings across PR files and enforces MAX_COMMENTS_PER_PR cap."""
-        severity_order = {"critical": 0, "warning": 1, "info": 2}
-        sorted_findings = sorted(all_findings, key=lambda x: (severity_order.get(x.severity, 3), x.path, x.line))
-        max_pr = self.settings.MAX_COMMENTS_PER_PR
-        return sorted_findings[:max_pr] if len(sorted_findings) > max_pr else sorted_findings
 
     @staticmethod
     def _print_summary_table(review_result: ReviewResult) -> None:

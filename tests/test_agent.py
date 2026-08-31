@@ -156,16 +156,10 @@ def test_agent_post_review_execution(mock_github: MagicMock, mock_llm: MagicMock
 
 
 def test_agent_guardrail_caps(mock_github: MagicMock):
-    """Verifies MAX_COMMENTS_PER_FILE and MAX_COMMENTS_PER_PR caps."""
-    settings = Settings(
-        REPO="test-owner/test-repo",
-        MAX_COMMENTS_PER_PR=3,
-        MAX_COMMENTS_PER_FILE=2,
-        DRY_RUN=True,
-    )
-    agent = PRSageAgent(settings=settings, github=mock_github)
+    """Verifies apply_guardrails priority sorting and capping."""
+    from src.guardrails import apply_guardrails
 
-    # 4 findings on a single file
+    # 4 findings on a single file capped to 2
     file_findings = [
         ReviewComment(path="a.py", line=1, severity="info", category="style", comment="style note"),
         ReviewComment(path="a.py", line=2, severity="warning", category="bug", comment="bug note"),
@@ -173,7 +167,7 @@ def test_agent_guardrail_caps(mock_github: MagicMock):
         ReviewComment(path="a.py", line=4, severity="info", category="clarity", comment="clarity note"),
     ]
 
-    capped = agent._apply_file_guardrails(file_findings, "a.py")
+    capped = apply_guardrails(file_findings, max_per_file=2, max_per_pr=10)
     assert len(capped) == 2
     # Critical and warning must be prioritized over info
     assert capped[0].severity == "critical"
@@ -186,7 +180,34 @@ def test_agent_guardrail_caps(mock_github: MagicMock):
         ReviewComment(path="c.py", line=3, severity="warning", category="bug", comment="3"),
         ReviewComment(path="d.py", line=4, severity="critical", category="security", comment="4"),
     ]
-    global_capped = agent._apply_global_guardrails(all_findings)
+    global_capped = apply_guardrails(all_findings, max_per_file=10, max_per_pr=3)
     assert len(global_capped) == 3
     severities = [f.severity for f in global_capped]
     assert severities == ["critical", "critical", "warning"]
+
+
+def test_agent_review_code_ast_fallback(tmp_path: Path, monkeypatch):
+    """Verifies review_code gracefully falls back to AST pattern detection when LLM is unavailable."""
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(DRY_RUN=True, DATABASE_PATH=str(tmp_path / "test.db"))
+    # Agent with no LLM connection
+    agent = PRSageAgent(settings=settings)
+
+    code = '''
+def execute_query(user_id):
+    query = f"SELECT * FROM users WHERE id = '{user_id}'"
+    return db.execute(query)
+
+SECRET_KEY = "my_super_secret_jwt_token_123"
+
+def run_cmd(cmd):
+    import subprocess
+    subprocess.run(cmd, shell=True)
+'''
+    result = agent.review_code(code, filename="vulnerable.py")
+    assert len(result.comments) > 0
+    # SQLi, Secret, or Command injection detected via static AST rules
+    severities = [c.severity for c in result.comments]
+    assert "critical" in severities
+    assert result.patch_content != ""
+
