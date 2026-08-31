@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   review:
-    name: Multi-Step Agentic Review
-    runs-on: self-hosted
+    name: Deterministic 4-Stage Agentic Review
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -27,19 +27,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify Local Ollama Service
-        shell: bash
-        run: |
-          echo "Checking local Ollama connectivity at ${OLLAMA_BASE_URL:-http://localhost:11434}..."
-          curl -s --fail "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" || {
-            echo "ERROR: Local Ollama service is not running. Please start Ollama before triggering reviews."
-            exit 1
-          }
-
-      - name: Execute PR Sage Agentic Review
+      - name: Execute PR Sage Review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'http://localhost:11434' }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           REPO: ${{ github.repository }}
         run: |
-          python -m agent --pr-number ${{ github.event.pull_request.number }}
+          python -m src.main --pr-number ${{ github.event.pull_request.number }}

@@ -1,11 +1,11 @@
-"""LLM interaction client for Groq API with structured output enforcement.
+"""LLM interaction client supporting Groq API, OpenAI endpoints, and local Ollama with structured output enforcement.
 
 Interview Rationale (WHY):
-- Strict JSON & Pydantic Schema Injection: Small models can produce markdown chatter.
-  We inject the exact JSON schema and few-shot formatting instructions into the prompt.
-- Self-Correction / Repair Retry: If initial JSON decoding or Pydantic validation fails, we feed the exact validation
-  error back to the model for a surgical 1-shot repair retry rather than crashing.
-- Groq API: Free tier with llama-3.1-8b-instant, OpenAI-compatible endpoint.
+- Multi-Provider Compatibility: Automatically adapts endpoint paths between OpenAI/Groq (/chat/completions)
+  and local Ollama (/api/chat) with keep_alive=0 for 8GB RAM conservation.
+- Strict JSON & Pydantic Schema Injection: Injects schema and few-shot formatting directives into the prompt.
+- Self-Correction / Repair Retry: If initial JSON decoding or Pydantic validation fails, feeds the exact
+  validation error back to the model for a surgical 1-shot repair retry rather than crashing.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class StructuredOutputError(Exception):
 
 
 class LLMClient:
-    """Groq API client with structured output extraction and retry logic."""
+    """Universal LLM client with structured output extraction and retry logic."""
 
     def __init__(
         self,
@@ -47,12 +47,14 @@ class LLMClient:
         self.temperature = temperature
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         self._client = client or httpx.Client(
             timeout=self.timeout,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
         )
 
     def close(self) -> None:
@@ -65,24 +67,35 @@ class LLMClient:
         system: str | None = None,
         format: dict[str, Any] | str | None = None,
     ) -> str:
-        """Sends a completion request to Groq API (OpenAI-compatible endpoint)."""
-        url = f"{self.base_url}/chat/completions"
+        """Sends a completion request to Groq/OpenAI or local Ollama."""
+        is_ollama = "11434" in self.base_url or "ollama" in self.base_url.lower()
 
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "stream": False,
-        }
-
-        # Groq supports response_format for JSON mode
-        if format is not None:
-            payload["response_format"] = {"type": "json_object"}
+        if is_ollama:
+            url = f"{self.base_url}/api/chat"
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "keep_alive": 0,
+                "options": {"temperature": self.temperature},
+            }
+            if format is not None:
+                payload["format"] = "json"
+        else:
+            url = f"{self.base_url}/chat/completions"
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.temperature,
+                "stream": False,
+            }
+            if format is not None:
+                payload["response_format"] = {"type": "json_object"}
 
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
@@ -90,6 +103,10 @@ class LLMClient:
                 response = self._client.post(url, json=payload)
                 if response.is_success:
                     data = response.json()
+                    # Handle Ollama format: {"message": {"content": "..."}}
+                    if "message" in data:
+                        return data.get("message", {}).get("content", "").strip()
+                    # Handle OpenAI/Groq format: {"choices": [{"message": {"content": "..."}}]}
                     return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                 response.raise_for_status()
             except (httpx.RequestError, httpx.HTTPStatusError) as exc:
@@ -97,13 +114,13 @@ class LLMClient:
                 if attempt + 1 < self.max_retries:
                     backoff = (2**attempt) * 1.0
                     logger.warning(
-                        f"Groq call failed on attempt {attempt + 1}/{self.max_retries}: {exc}. Retrying in {backoff:.1f}s."
+                        f"LLM call failed on attempt {attempt + 1}/{self.max_retries}: {exc}. Retrying in {backoff:.1f}s."
                     )
                     time.sleep(backoff)
                     continue
                 break
 
-        raise RuntimeError(f"Groq API request failed after {self.max_retries} attempts: {last_error}")
+        raise RuntimeError(f"LLM API request failed after {self.max_retries} attempts: {last_error}")
 
     def complete_structured(
         self,
@@ -111,7 +128,7 @@ class LLMClient:
         output_model: type[T],
         system: str | None = None,
     ) -> T:
-        """Enforces Pydantic structured output from Groq with repair retries."""
+        """Enforces Pydantic structured output with repair retries."""
         schema_json = json.dumps(output_model.model_json_schema(), indent=2)
         format_instruction = (
             f"\n\nCRITICAL INSTRUCTION: You must respond ONLY with a single valid JSON object that strictly adheres "

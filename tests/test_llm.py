@@ -27,7 +27,7 @@ def test_complete_success_with_keep_alive():
     assert response == "Hello World"
     assert route.called
     req_json = route.calls.last.request.read().decode()
-    assert '"keep_alive": 0' in req_json
+    assert '"keep_alive": 0' in req_json or '"keep_alive":0' in req_json
 
 
 @respx.mock

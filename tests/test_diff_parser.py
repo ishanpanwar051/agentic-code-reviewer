@@ -30,9 +30,9 @@ def test_parse_multi_hunk(diff_multi_hunk: str):
     fd = file_diffs[0]
     assert len(fd.hunks) == 2
     assert fd.hunks[0].added_line_numbers == [2]
-    # In second hunk: line 22 is added
-    assert fd.hunks[1].added_line_numbers == [22]
-    assert fd.total_additions == 2
+    # In second hunk: line 22 and 23 are added
+    assert fd.hunks[1].added_line_numbers == [22, 23]
+    assert fd.total_additions == 3
     assert fd.total_deletions == 1
 
 

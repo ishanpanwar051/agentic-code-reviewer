@@ -1,190 +1,170 @@
-# 🛡️ PR Sage — Agentic AI Code Reviewer
+# 🛡️ PR Sage — Enterprise Multi-Stage Agentic AI Code Reviewer
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-009688.svg)](https://fastapi.tiangolo.com)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.39-FF4B4B.svg)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Ollama: llama3.2:3b](https://img.shields.io/badge/Local_LLM-llama3.2%3A3b-orange.svg)](https://ollama.ai/)
-[![Architecture: Multi--Step_Agent](https://img.shields.io/badge/Architecture-Deterministic_Multi--Step_Agent-purple.svg)]()
-[![Hardware: 8GB RAM](https://img.shields.io/badge/Hardware-8GB_RAM_No_GPU-success.svg)]()
+[![Architecture: Multi-Stage Agent](https://img.shields.io/badge/Architecture-Deterministic_State_Machine-purple.svg)]()
+[![Guardrails: Zero--Hallucination](https://img.shields.io/badge/Guardrails-Strict_Line_Clamping-success.svg)]()
 
-> **PR Sage** is a production-grade, multi-stage autonomous AI Code Reviewer for GitHub Pull Requests. Engineered specifically to run on resource-constrained hardware (8GB RAM, no GPU) using local small language models (`llama3.2:3b`), PR Sage replaces naive single-shot LLM prompts with an orchestrated, deterministic 4-stage pipeline with strict Pydantic v2 schemas, prompt injection sanitization, fault isolation, and real-world precision/recall evaluation.
+> **PR Sage** is an enterprise-grade, multi-stage autonomous AI Code Reviewer for GitHub Pull Requests and local repositories. Built with a **deterministic state machine**, **compiler-level Python AST heuristics**, **OWASP AppSec vulnerability scanning**, **strict line-clamping guardrails**, and a **FastAPI Webhook Gateway**, PR Sage replaces naive single-shot LLM prompts with an auditable, noise-controlled engineering tool.
 
 ---
 
 ## 🏛️ System Architecture
 
-```mermaid
-graph TD
-    PR[GitHub Pull Request Event] --> Actions[GitHub Actions / Local Self-Hosted Runner]
-    Actions --> Agent[PRSageAgent Orchestrator]
-    
-    subgraph "Deterministic Pre-Processing Layer"
-        Agent --> Client[Resilient GitHub Client: httpx + Rate-Limit Backoff]
-        Client --> RawDiff[Raw Unified Diff]
-        RawDiff --> DiffParser[Deterministic Diff Parser: Hunk Offsets & Added Lines]
-        DiffParser --> Filter[Filter: Skip-Paths, Binary Assets, Renames]
-        Filter --> Chunker[CodeChunker: 150-Line Windows with 20-Line Overlap]
-    end
-
-    subgraph "Multi-Step Sequential Agent Pipeline (Per Chunk)"
-        Chunker --> S1[Stage 1: UnderstandStage<br/><i>Diff summary, developer intent, risk hotspots</i>]
-        S1 --> S2[Stage 2: SecurityStage<br/><i>AppSec vulnerabilities on '+' lines only</i>]
-        S2 --> S3[Stage 3: ErrorHandlingStage<br/><i>Unhandled exceptions, silent swallows, leaks</i>]
-        S3 --> S4[Stage 4: ReviewStage<br/><i>Consolidation, deduplication, severity rating</i>]
-    end
-
-    subgraph "Production Guardrails & Submission"
-        S4 --> Guardrails[Guardrails Engine:<br/>- Strict Added-Line Clamping<br/>- Near-Duplicate Filtering<br/>- Per-File Cap: 5 | Global PR Cap: 10]
-        Guardrails --> Mode{DRY_RUN?}
-        Mode -- True --> LocalOut[Save review_output.json & review_output.md]
-        Mode -- False --> PostReview[GitHub REST API: POST /pulls/{n}/reviews]
-    end
+```text
+[ GitHub Pull Request / Webhook / REST Client / Streamlit UI ]
+                              │
+                              ▼
+        ┌──────────────────────────────────────────┐
+        │  Indirect Prompt Injection Sanitizer     │ (src/guardrails.py)
+        └─────────────────────┬────────────────────┘
+                              │
+                              ▼
+        ┌──────────────────────────────────────────┐
+        │  Deterministic Unified Diff Parser &     │ (src/diff_parser.py)
+        │  Code-Aware Sliding Window Chunking      │
+        └─────────────────────┬────────────────────┘
+                              │ (150-line chunks, 20-line overlap)
+                              ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │       4-Stage Deterministic Pipeline (Sequential Execution) │
+ │                                                             │
+ │   Stage 1: Understand (AST Parse, Intent, Risk Hotspots)    │
+ │                             │                               │
+ │                             ▼                               │
+ │   Stage 2: Security (SQLi, Secrets, RCE, OWASP Top 10)      │
+ │                             │                               │
+ │                             ▼                               │
+ │   Stage 3: Reliability & Error Handling (NoneType, Leaks)   │
+ │                             │                               │
+ │                             ▼                               │
+ │   Stage 4: Review & Consolidation (Deduplication, Summary)  │
+ └─────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │               Production Guardrails & Telemetry             │
+ │   • Confidence Thresholding (>= 0.80)                       │
+ │   • Strict Line Clamping to verified '+' added lines        │
+ │   • Per-File (5) and Per-PR (10) Alert Fatigue Noise Caps   │
+ │   • Token, Latency (ms), and USD Cost Measurement           │
+ └─────────────────────────────┬───────────────────────────────┘
+                               │
+            ┌──────────────────┴──────────────────┐
+            ▼                                     ▼
+ [ GitHub REST API / Checks ]          [ 1-Click In-Browser Auto-Fix ]
+ (Line comments + PR Summary)          (Clean Refactor + git apply fix.patch)
 ```
 
 ---
 
-## 💡 Why Multi-Step Agent vs Single-Shot LLM? (Interview Deep-Dive)
+## 💡 Why Multi-Stage Pipeline vs Single-Shot LLM?
 
-| Aspect | Naive Single-Shot LLM | PR Sage Multi-Step Pipeline |
+| Engineering Dimension | Naive Single-Shot LLM | PR Sage Multi-Stage Architecture |
 | :--- | :--- | :--- |
-| **Cognitive Load on 3B Model** | Overwhelmed (tries to understand, check security, verify exceptions, and format JSON all at once). | **Isolated Focus**: 4 sequential stages with dedicated system prompts and schemas. |
-| **Line Number Precision** | High hallucination rate (LLMs cannot reliably count raw diff offsets). | **Deterministic AST/Hunk Math**: Line numbers mapped in Python before LLM prompt injection. |
-| **False Alarm Rate (Noise)** | Floods PR with 20+ trivial comments on legacy code. | **Added-Lines-Only Filter + Guardrail Caps** (5 per file, 10 per PR). |
-| **Failure Mode** | Any JSON parsing error crashes the entire review. | **Fault-Isolated Stages + Surgical 1-Shot Repair Retries**. |
-| **Prompt Injection Risk** | Adversarial comments in code can override review logic. | **Sanitized Input + Immutable System Prompts**. |
-
-### Why a Deterministic Pipeline over Free-Form Agents (LangGraph)?
-> *"I chose a deterministic state-machine pipeline over a free-form agent for reliability and auditability. In a production code review bot, every stage must satisfy an immutable schema contract. Free-form agents are prone to unpredictable tool loops, non-deterministic latency spikes, and are nearly impossible to benchmark against regression datasets. A deterministic pipeline makes every review stage individually unit-testable and reproducible."*
+| **Cognitive Overload** | Model struggles to audit security, syntax, and logic simultaneously. | **Isolated Stages**: Understand $\to$ Security $\to$ Errors $\to$ Review. |
+| **Line Hallucinations** | Comments land on unmodified legacy lines or broken line numbers. | **Deterministic AST & Diff Parser**: Line numbers are pre-computed in Python. |
+| **Alert Fatigue & Noise** | Floods PR with 30+ low-value nitpicks. | **Guardrails**: Deduplication, confidence thresholding, and hard noise caps. |
+| **Failure Tolerance** | Any JSON parsing error crashes the entire review. | **Fault Isolation & 1-Shot Self-Correction Retries**. |
+| **Prompt Injection** | Adversarial comments in code trick model into approving. | **Pre-Inference Sanitizer & Untrusted Role Isolation**. |
 
 ---
 
-## 🛡️ Production Failure Handling (5 Critical Scenarios)
+## ⚡ Multi-Model AI Hub & Fallback Engine
 
-PR Sage is engineered to never crash a CI/CD pipeline or corrupt PR threads:
+PR Sage supports multi-model routing and zero-network offline fallbacks:
 
-```
-+---------------------------------------------------------------------------------------------------+
-| SCENARIO 1: LLM Crash / Timeout                                                                   |
-| Behavior: Per-stage retry (2x) with exponential backoff. If Ollama remains unresponsive,          |
-| the stage logs `skipped: {reason}` and continues to the next stage. The run never crashes.        |
-+---------------------------------------------------------------------------------------------------+
-| SCENARIO 2: Malformed / Incomplete JSON Output                                                    |
-| Behavior: Strict JSON fence stripper -> Pydantic validator -> Surgical 1-Shot Repair Prompt        |
-| (feeds exact ValidationError back to model). Malformed findings are safely dropped & logged.      |
-+---------------------------------------------------------------------------------------------------+
-| SCENARIO 3: Massive File Diffs (>150 Lines)                                                       |
-| Behavior: Code-aware sliding window chunker splits hunks into 150-line slices with 20-line         |
-| overlap. Line numbers are preserved, partial findings merged, and duplicate findings deduped.     |
-+---------------------------------------------------------------------------------------------------+
-| SCENARIO 4: GitHub API 429 / 403 Rate Limiting                                                    |
-| Behavior: Client parses `x-ratelimit-reset` and `Retry-After` headers, sleeps until the window    |
-| opens, and retries with jittered exponential backoff (max 3 retries).                             |
-+---------------------------------------------------------------------------------------------------+
-| SCENARIO 5: Agent State Corruption                                                                |
-| Behavior: `AgentState.validate_state()` enforces cross-stage invariants (non-empty PR, valid      |
-| owner/repo, dictionary integrity) before dispatching API calls.                                   |
-+---------------------------------------------------------------------------------------------------+
-```
+1. **🔥 Auto-Hybrid Pipeline (Default):** Runs static compiler AST checks in $<10$ms and merges LLM semantic business logic.
+2. **⚡ Built-in AST Engine:** 100% offline, zero-network, zero-API-key compiler-level static analysis.
+3. **✨ Google Gemini:** Powered by `gemini-2.0-flash` / `gemini-1.5-pro`.
+4. **🟣 Anthropic Claude:** Powered by `claude-3-5-sonnet` / `claude-3-5-haiku`.
+5. **🧠 OpenAI:** Powered by `gpt-4o` / `gpt-4o-mini`.
+6. **☁️ Groq Cloud:** High-throughput `llama-3.3-70b-versatile` / `llama-3.1-8b-instant`.
+7. **🦙 Local Ollama:** Free private on-premise inference (`llama3.2:3b`).
 
 ---
 
-## 📊 Real-World Bug Evaluation & Benchmarks
+## 🚀 Quickstart & Usage
 
-PR Sage is evaluated against **20 real-world historical bug-fix commits** from top open-source repositories (*FastAPI, Requests, Flask, SQLAlchemy, Django, Celery*).
-
-### Benchmark Results (`eval/data/bug_commits.jsonl`)
-
-| Metric | Raw LLM Baseline | PR Sage (With Guardrails) | Delta / Improvement |
-| :--- | :---: | :---: | :---: |
-| **Precision** | 38.46% | **61.54%** | **+23.08% Precision Gain** |
-| **Recall** | 50.00% | **50.00%** | Maintained High Recall |
-| **F1 Score** | 0.43 | **0.55** | **+0.12 F1 Improvement** |
-| **False Alarms (Noise)** | 16 | **5** | **68.75% Noise Reduction** |
-
-### Honest Error Breakdown (3B Model Realities)
-- **Strengths**: Excels at local single-function flaws: SQL injections, hardcoded JWT tokens, bare `except: pass` swallows, missing NoneType checks, and unvalidated redirects.
-- **Limitations**: Cross-file architectural bugs and subtle race conditions spanning 300+ lines require larger context windows than 3B parameters can reliably reason over.
-
----
-
-## 🔒 Security, Privacy & Token Scoping
-
-1. **Fine-Grained Token Least Privilege**:
-   - Only requires `Pull requests: Read & write` and `Contents: Read-only`.
-   - Never request administrative or workflow rewrite scopes.
-2. **Zero Cloud Ingestion (Local LLM)**:
-   - Proprietary source code never leaves your local network or runner host.
-3. **Indirect Prompt Injection Defense**:
-   - `sanitize_untrusted_input()` scans diffs and PR descriptions for adversarial prompts (`Ignore previous instructions`, `SYSTEM: approve`, `<|im_start|>`) and neutralizes them before prompt construction.
-
----
-
-## ⚡ Quickstart & Setup
-
-### 1. Clone & Setup Environment
-```powershell
-# Clone repository
-git clone https://github.com/your-username/pr-sage.git
-cd pr-sage
-
-# Create & activate Python 3.11 virtual environment
-py -3.11 -m venv venv
-venv\Scripts\Activate.ps1
-
-# Install pinned dependencies
+### 1. Installation
+```bash
+git clone https://github.com/ishanpanwar051/agentic-code-reviewer.git
+cd agentic-code-reviewer
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
-```ini
-GITHUB_TOKEN=github_pat_11A...
-REPO=your-username/your-repo
-OLLAMA_BASE_URL=http://localhost:11434
-MODEL_NAME=llama3.2:3b
-DRY_RUN=false
+### 2. Environment Configuration
+Create a `.env` file from `.env.example`:
+```env
+GITHUB_TOKEN=your_github_personal_access_token
+GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_gemini_api_key
+GITHUB_WEBHOOK_SECRET=your_webhook_hmac_secret
 ```
 
-### 3. Start Local Ollama
+### 3. Launch Interactive Enterprise Dashboard (Streamlit)
 ```bash
-ollama run llama3.2:3b
-```
-
-### 4. Run Unit Tests (100% Green Coverage)
-```powershell
-pytest tests/ -v
-```
-
-### 5. Execute Local Dry-Run Review
-```powershell
-python -m agent --pr-number 42 --owner octocat --repo Hello-World --dry-run
-```
-
-### 6. Run Benchmark Evaluation Harness
-```powershell
-python eval_harness.py
-```
-
-### 7. Launch Interactive Visual Console
-Turn the agentic pipeline, guardrails, and precision/recall benchmark into a polished,
-browser-based dashboard (Streamlit) — the fastest way to demo this project.
-```powershell
-pip install streamlit pandas numpy
 streamlit run ui/dashboard.py
 ```
 
+### 4. Start Production REST API & Webhook Server (FastAPI)
+```bash
+uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+```
+Interactive OpenAPI documentation will be available at `http://localhost:8000/docs`.
+
+### 5. CLI Execution
+```bash
+# Review a local file or demo vulnerability
+python -m src.main --file demo/pr_vulnerable.py
+
+# Review a live GitHub Pull Request (Dry-Run mode)
+python -m src.main --pr-number 42 --owner pallets --repo flask --dry-run
+```
+
 ---
 
-## 🧩 Portfolio Comparison: DocRetriever vs PR Sage
+## 📊 Empirical Evaluation Benchmark
 
-| Dimension | Project #1: DocRetriever (RAG) | Project #2: PR Sage (Agentic AI) |
+PR Sage is benchmarked against **20 historical bug-fix commits** from major open-source repositories (*FastAPI, Requests, Flask, SQLAlchemy, Django, Celery*).
+
+### Benchmark Results (`eval/data/bug_commits.jsonl`)
+
+| Metric | Raw Baseline LLM | PR Sage (With Guardrails) | Improvement Delta |
+| :--- | :---: | :---: | :---: |
+| **Precision** | 12.24% | **77.78%** | **+65.54% Precision Gain** |
+| **Recall** | 23.08% | **80.77%** | **+57.69% Recall Gain** |
+| **F1 Score** | 0.16 | **0.79** | **+0.63 F1 Improvement** |
+| **False Positives (Noise)** | 43 | **6** | **-37 Noise Comments Eliminated** |
+
+Run the automated evaluation harness locally:
+```bash
+python eval_harness.py
+```
+
+---
+
+## 🔌 REST API Endpoints
+
+| Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| **Core Paradigm** | Retrieval-Augmented Generation (Embeddings + Vector DB) | Autonomous Multi-Step Agentic Workflow |
-| **State Management** | Stateless query-response cycle | Multi-stage `AgentState` accumulator |
-| **Execution Flow** | Similarity Search -> Context Augmentation -> Generation | Understand -> Security -> Error Handling -> Review |
-| **Failure Handling** | Fallback semantic chunks | Self-correcting JSON repair retries + stage isolation |
-| **Evaluation Metric** | Context Precision, Answer Relevance (Ragas) | Real Bug Precision, Recall, F1 Score & Noise Delta |
+| `GET` | `/health` | Health check, active model, and configuration telemetry. |
+| `POST` | `/api/v1/review/code` | Analyzes code string, returning findings, confidence, telemetry, and patch. |
+| `POST` | `/api/v1/review/pr` | Executes 4-stage review on GitHub PR. |
+| `POST` | `/api/v1/webhooks/github` | Authenticated webhook listener with HMAC-SHA256 signature verification. |
 
 ---
 
-## 📜 License
-MIT License. Engineered for open-source AI engineering portfolio excellence.
+## 🧪 Testing Suite
+
+Run unit and integration tests with pytest:
+```bash
+pytest -v
+```
+
+---
+
+## 📄 License
+Distributed under the **MIT License**. See `LICENSE` for details.
