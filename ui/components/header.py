@@ -18,7 +18,7 @@ def render_header(provider_label: str, system_status: str = "System Ready") -> N
         <div class="brand-container">
             <div class="brand-logo-icon">🛡️</div>
             <div>
-                <h1 class="brand-title">PR Sage — Enterprise AI Code Reviewer</h1>
+                <h1 class="brand-title">PR Sage — AI Code Reviewer</h1>
                 <div class="brand-sub">Autonomous 4-Stage Deterministic Pipeline · Strict Line Clamping · Multi-LLM Engine</div>
             </div>
         </div>
