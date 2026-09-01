@@ -208,3 +208,35 @@ def test_confidence_threshold_filtering() -> None:
     filtered = apply_guardrails(comments, min_confidence=0.70)
     assert len(filtered) == 2
     assert all(c.confidence >= 0.70 for c in filtered)
+
+
+def test_python_code_detection_when_filename_is_cpp() -> None:
+    """Verifies that Python code with off-by-one is correctly identified as Python and detected even if filename is main.cpp."""
+    py_code = """def calculate_total(numbers):
+    total = 0
+
+    for i in range(len(numbers) + 1):
+        total += numbers[i]
+
+    return total
+
+
+def get_user(users, user_id):
+    for user in users:
+        if user["id"] == user_id:
+            return user
+    return None"""
+
+    lang_key, lang_name = detect_language(py_code, "main.cpp")
+    assert lang_key == "python"
+    assert lang_name == "Python"
+
+    meta, findings, traces = run_static_analysis(py_code, "main.cpp")
+    assert meta["language"] == "Python"
+    
+    # Must catch the Off-by-one range error (CWE-193) and unchecked dict key (CWE-476)
+    off_by_one_findings = [f for f in findings if f.get("cwe") == "CWE-193"]
+    assert len(off_by_one_findings) >= 1
+    assert "range(len(numbers) + 1)" in off_by_one_findings[0]["bad_code"]
+    assert "for i in range(len(numbers)):" in off_by_one_findings[0]["fix_code"]
+

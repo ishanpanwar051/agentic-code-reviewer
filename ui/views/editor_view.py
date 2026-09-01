@@ -43,17 +43,17 @@ def render_editor_view() -> Tuple[str, str]:
     # Real-time language detection & smart filename extension sync
     lang_key, det_name = detect_language(target_code or " ", active_filename)
     if target_code.strip():
-        if lang_key in ("cpp", "c") and active_filename.endswith((".py", ".pyw", "payment_service.py")):
+        if lang_key in ("cpp", "c") and (active_filename.endswith((".py", ".pyw", "payment_service.py")) or active_filename == "app.py"):
             active_filename = "main.cpp"
-        elif lang_key == "python" and active_filename.endswith((".cpp", ".c", ".h")):
+        elif lang_key == "python" and (active_filename.endswith((".cpp", ".c", ".h", ".cxx", ".cc")) or active_filename == "main.cpp"):
             active_filename = "app.py"
-        elif lang_key == "java" and active_filename.endswith((".py", ".cpp")):
+        elif lang_key == "java" and (active_filename.endswith((".py", ".cpp")) or active_filename == "main.cpp"):
             active_filename = "Main.java"
-        elif lang_key == "go" and active_filename.endswith((".py", ".cpp")):
+        elif lang_key == "go" and (active_filename.endswith((".py", ".cpp")) or active_filename == "main.cpp"):
             active_filename = "main.go"
-        elif lang_key == "rust" and active_filename.endswith((".py", ".cpp")):
+        elif lang_key == "rust" and (active_filename.endswith((".py", ".cpp")) or active_filename == "main.cpp"):
             active_filename = "main.rs"
-        elif lang_key in ("javascript", "typescript") and active_filename.endswith((".py", ".cpp")):
+        elif lang_key in ("javascript", "typescript") and (active_filename.endswith((".py", ".cpp")) or active_filename == "main.cpp"):
             active_filename = "index.js"
 
     st.session_state["editor_filename"] = active_filename

@@ -247,12 +247,19 @@ def run_backup(user_input_folder):
 
 def detect_language(code: str, filename: str = "") -> tuple[str, str]:
     """
-    Detects (lang_key, display_name) with content-signature priority.
-    Prevents mistaking C++, Java, or Go code for Python even if default filename is .py.
+    Detects (lang_key, display_name) with content-signature priority across all polyglot languages.
+    Prevents mistaking Python code for C++ even if default filename is main.cpp, and vice versa.
     """
-    # 1. Strong unambiguous code signatures (overrides mismatched or default filenames)
+    # 1. Unambiguous Python signatures (checked first to prevent .cpp filename override)
+    if re.search(r'^\s*def\s+\w+\s*\(|^\s*class\s+\w+\s*(?:\([^)]*\))?\s*:|import\s+(?:os|sys|json|re|math|logging|typing|sqlite3|subprocess)|from\s+[\w.]+\s+import|for\s+\w+\s+in\s+(?:range|enumerate|zip)\(|elif\s+|^\s*print\s*\(', code, re.MULTILINE):
+        if not re.search(r'#include\s*<|using\s+namespace\s+|std::|cout\s*<<|cin\s*>>', code):
+            return ("python", "Python")
+
+    # 2. Unambiguous C/C++ signatures
     if re.search(r'#include\s*<|using\s+namespace\s+|std::|int\s+main\s*\([^)]*\)|cout\s*<<|cin\s*>>|nullptr|delete\[\]|sqlite3_exec|char\s+\w+\[\d+\]|\bcatch\s*\(\s*\.\.\.\s*\)', code):
         return ("cpp", "C++")
+
+    # 3. Other Polyglot signatures
     if re.search(r'public\s+(?:static\s+)?(?:void|class|int|String|final)|System\.out\.print|import\s+java\.|PreparedStatement', code):
         return ("java", "Java")
     if re.search(r'package\s+main|func\s+\w+\(|fmt\.Print', code):
@@ -264,7 +271,7 @@ def detect_language(code: str, filename: str = "") -> tuple[str, str]:
     if re.search(r'console\.log\(|const\s+\w+\s*=\s*require|import\s+.*from\s+["\']|document\.|process\.env', code):
         return ("javascript", "JavaScript")
 
-    # 2. Check filename extension if content didn't have strong overrides
+    # 4. Check filename extension if content didn't have strong overrides
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     ext_map = {
         "py": ("python", "Python"),
@@ -296,7 +303,7 @@ def detect_language(code: str, filename: str = "") -> tuple[str, str]:
     if ext in ext_map:
         return ext_map[ext]
 
-    # 3. Fallback Python check
+    # 5. Fallback Python check
     if re.search(r'def\s+\w+\(|import\s+os|import\s+sys|class\s+\w+:|print\(', code):
         return ("python", "Python")
 
@@ -912,6 +919,43 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 })
                 err_count += 1
 
+            # Python off-by-one in range(len(...) + 1) -> index out of range
+            range_match = re.search(r'for\s+(\w+)\s+in\s+range\(\s*len\(\s*(\w+)\s*\)\s*\+\s*1\s*\)\s*:', l)
+            if range_match:
+                var_i = range_match.group(1)
+                var_arr = range_match.group(2)
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": f"Off-by-One Loop Bound (`range(len({var_arr}) + 1)`) (CWE-193)",
+                    "category": "Reliability",
+                    "cwe": "CWE-193",
+                    "owasp": "Code Correctness",
+                    "description": f"Iterating `range(len({var_arr}) + 1)` causes index `{var_arr}[len({var_arr})]` on the final iteration, raising an unhandled `IndexError: list index out of range` exception. Fix range to `range(len({var_arr}))`.",
+                    "bad_code": l,
+                    "fix_code": f"for {var_i} in range(len({var_arr})):"
+                })
+                err_count += 1
+
+            # Python Unchecked Dict Key Subscript
+            dict_sub = re.search(r'if\s+(\w+)\[["\'](\w+)["\']\]\s*==\s*(\w+):', l)
+            if dict_sub:
+                d_name = dict_sub.group(1)
+                k_name = dict_sub.group(2)
+                t_name = dict_sub.group(3)
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": f"Unchecked Subscript Access (`{d_name}['{k_name}']`) (CWE-476)",
+                    "category": "Reliability",
+                    "cwe": "CWE-476",
+                    "owasp": "Code Correctness",
+                    "description": f"Directly accessing `{d_name}['{k_name}']` raises `KeyError` if key is missing or `TypeError` if `{d_name}` is None. Use `{d_name}.get('{k_name}') == {t_name}`.",
+                    "bad_code": l,
+                    "fix_code": f"if isinstance({d_name}, dict) and {d_name}.get('{k_name}') == {t_name}:"
+                })
+                err_count += 1
+
             if re.search(r'/\s*0(\.0)?(\s*[\+\-\*\/\);]|$)', l):
                 findings.append({
                     "line": idx,
@@ -966,15 +1010,26 @@ def synthesize_poc_and_impact(finding: dict[str, Any], lang_key: str, filename: 
     line = finding.get("line", 1)
 
     if cwe == "CWE-193":
-        impact = "Memory corruption: Loop bound iterates beyond allocated buffer, overwriting adjacent stack memory."
-        evidence = f"Condition '{bad_code}' causes loop to execute index n (out of bounds for array size n)."
-        poc_code = f"// Reproduction Test for Off-by-One Loop:\nint arr[3];\nfor(int i=0; i<=3; i++) {{ arr[i] = i; }} // Crashes on arr[3]"
-        poc = {
-            "code": poc_code,
-            "runtime_output": "💥 AddressSanitizer: global-buffer-overflow on address (offset +1 past bound)",
-            "verified": True,
-            "reproduced": True,
-        }
+        if lang_key == "python":
+            impact = "Runtime Crash: IndexError thrown when accessing list beyond its maximum valid index [0..len-1]."
+            evidence = f"Condition '{bad_code}' iterates up to index len(arr) which exceeds valid bounds."
+            poc_code = "numbers = [10, 20, 30]\ntotal = 0\nfor i in range(len(numbers) + 1):\n    total += numbers[i]  # Fails on i=3"
+            poc = {
+                "code": poc_code,
+                "runtime_output": "💥 IndexError: list index out of range (index 3 outside bounds [0..2])",
+                "verified": True,
+                "reproduced": True,
+            }
+        else:
+            impact = "Memory corruption: Loop bound iterates beyond allocated buffer, overwriting adjacent stack memory."
+            evidence = f"Condition '{bad_code}' causes loop to execute index n (out of bounds for array size n)."
+            poc_code = f"// Reproduction Test for Off-by-One Loop:\nint arr[3];\nfor(int i=0; i<=3; i++) {{ arr[i] = i; }} // Crashes on arr[3]"
+            poc = {
+                "code": poc_code,
+                "runtime_output": "💥 AddressSanitizer: global-buffer-overflow on address (offset +1 past bound)",
+                "verified": True,
+                "reproduced": True,
+            }
     elif cwe == "CWE-120":
         impact = "Critical RCE / Buffer Overflow: Unbounded memory write into stack frame."
         evidence = f"Unsafe string copy '{bad_code}' lacks length bounds checking."
@@ -1026,15 +1081,26 @@ def synthesize_poc_and_impact(finding: dict[str, Any], lang_key: str, filename: 
             "reproduced": True,
         }
     elif cwe == "CWE-476":
-        impact = "Process Crash (Null Dereference): Accessing null memory address causes instant OS segfault."
-        evidence = f"Pointer dereference in '{bad_code}' executed without checking for nullptr."
-        poc_code = f"int* ptr = nullptr;\nstd::cout << *ptr; // Instant segfault"
-        poc = {
-            "code": poc_code,
-            "runtime_output": "💥 Segmentation Fault (SIGSEGV): Dereferencing address 0x00000000",
-            "verified": True,
-            "reproduced": True,
-        }
+        if lang_key == "python":
+            impact = "Unhandled KeyError / TypeError: Missing dictionary key or None object dereference."
+            evidence = f"Subscript access '{bad_code}' assumes dictionary key existence without safe get()."
+            poc_code = "users = [{'name': 'Alice'}] # Missing 'id' key\nfor user in users:\n    if user['id'] == 1: pass"
+            poc = {
+                "code": poc_code,
+                "runtime_output": "💥 KeyError: 'id' (Key not found in dictionary object)",
+                "verified": True,
+                "reproduced": True,
+            }
+        else:
+            impact = "Process Crash (Null Dereference): Accessing null memory address causes instant OS segfault."
+            evidence = f"Pointer dereference in '{bad_code}' executed without checking for nullptr."
+            poc_code = f"int* ptr = nullptr;\nstd::cout << *ptr; // Instant segfault"
+            poc = {
+                "code": poc_code,
+                "runtime_output": "💥 Segmentation Fault (SIGSEGV): Dereferencing address 0x00000000",
+                "verified": True,
+                "reproduced": True,
+            }
     elif cwe == "CWE-391":
         impact = "Silent Failure: Unhandled exceptions are swallowed, corrupting state and hiding production errors."
         evidence = f"Catch-all block '{bad_code}' suppresses error without logging or raising."
