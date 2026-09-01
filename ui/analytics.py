@@ -1342,14 +1342,25 @@ def calculate_health_score(guarded_findings: list[dict[str, Any]]) -> tuple[int,
 
 
 def generate_refactored_code(original_code: str, findings: list[dict[str, Any]]) -> str:
-    """Applies suggested fixes onto original code lines to generate refactored code."""
+    """Applies suggested fixes onto original code lines to generate refactored code with preserved indentation."""
     code_lines = original_code.splitlines()
     fixed_lines = list(code_lines)
     for f in findings:
         line_idx = f.get("line", 1) - 1
         fix = f.get("fix_code", f.get("fix", ""))
         if 0 <= line_idx < len(fixed_lines) and fix:
-            fixed_lines[line_idx] = fix
+            orig_line = fixed_lines[line_idx]
+            indent_match = re.match(r'^(\s*)', orig_line)
+            indent = indent_match.group(1) if indent_match else ""
+
+            fix_parts = fix.splitlines()
+            indented_fix = []
+            for p in fix_parts:
+                if not p.startswith(indent) and p.strip():
+                    indented_fix.append(indent + p.strip())
+                else:
+                    indented_fix.append(p)
+            fixed_lines[line_idx] = "\n".join(indented_fix)
     return "\n".join(fixed_lines)
 
 

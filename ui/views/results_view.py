@@ -10,14 +10,16 @@ import streamlit as st
 from ui.analytics import (
     calculate_health_score,
     detect_language,
+    generate_refactored_code,
     load_eval_benchmark_data,
 )
-from ui.components.codeblock import render_annotated_code_viewer
+from ui.components.codeblock import render_annotated_code_viewer, render_diff_code_preview
 from ui.components.diff_card import render_diff_card
 from ui.components.export_panel import render_auto_fix_banner, render_export_buttons
 from ui.components.hud import render_score_hud
 from ui.components.onboarding import render_empty_state
 from ui.components.pipeline import render_pipeline_bar
+from ui.state import set_target_override
 
 # Optional DatabaseManager
 try:
@@ -80,8 +82,9 @@ def render_results_view(
     )
 
     # 3. Enterprise Verification Tabs
-    tab_diff, tab_readiness, tab_behavior, tab_issues, tab_source, tab_traces = st.tabs([
+    tab_diff, tab_refactor, tab_readiness, tab_behavior, tab_issues, tab_source, tab_traces = st.tabs([
         f"🧪 Verified PoC Proofs ({len(guarded_findings)})",
+        "✨ Complete Hardened Code",
         "🚦 6-Pillar Production Readiness",
         "🌐 Behavior Diff & Blast Radius",
         "📋 Actionable Matrix & Export",
@@ -130,7 +133,35 @@ def render_results_view(
             st.markdown("---")
             render_auto_fix_banner(filename, target_code, guarded_findings, lang_key=lang_key)
 
-    # ── Tab 2: 6-Pillar Production Readiness Scorecard
+    # ── Tab 2: Complete Hardened / Refactored Code Viewer
+    with tab_refactor:
+        st.subheader(f"✨ Complete Hardened & Refactored Code — `{filename}`")
+        st.caption("All security fixes, loop bounds, and safe lookups applied directly to produce clean, ready-to-merge code:")
+
+        refactored_code = generate_refactored_code(target_code, guarded_findings)
+
+        rf_c1, rf_c2 = st.columns([1, 1])
+        with rf_c1:
+            st.download_button(
+                label=f"📥 Download Refactored File (`fixed_{filename}`)",
+                data=refactored_code,
+                file_name=f"fixed_{filename}",
+                mime="text/plain",
+                type="primary",
+                use_container_width=True,
+            )
+        with rf_c2:
+            if st.button("🔄 Apply All Fixes to Editor & Re-Scan", key="apply_all_fixes_tab_btn", use_container_width=True):
+                set_target_override(refactored_code)
+                st.rerun()
+
+        st.markdown("##### 🟢 Complete Hardened Code (Ready to Copy):")
+        st.code(refactored_code, language=lang_key, line_numbers=True)
+
+        st.markdown("##### 🔄 Before vs After Side-by-Side Comparison:")
+        render_diff_code_preview(target_code, refactored_code, language=lang_key)
+
+    # ── Tab 3: 6-Pillar Production Readiness Scorecard
     with tab_readiness:
         st.subheader("🚦 Production Readiness & Merge Oracle")
         st.caption("Evidence-based assessment across 6 core production survivability dimensions:")
@@ -151,17 +182,24 @@ def render_results_view(
         )
 
         r1, r2, r3 = st.columns(3)
-        with r1:
-            st.metric("1. Correctness & Logic", f"{readiness.get('correctness', 95)}/100", "Zero Logic Flaws" if crit_count == 0 else "-25 per Critical")
-            st.metric("2. AppSec & OWASP", f"{readiness.get('security', 90)}/100", "Clean Parameterization" if crit_count == 0 else "Vulnerabilities Detected")
-        with r2:
-            st.metric("3. Edge Test Coverage", f"{readiness.get('testing', 80)}/100", "Boundary Validated")
-            st.metric("4. Performance & Scalability", f"{readiness.get('performance', 90)}/100", "Optimal Time Complexity")
-        with r3:
-            st.metric("5. 3 AM Observability", f"{readiness.get('observability', 85)}/100", "Telemetry Logged")
-            st.metric("6. Rollback Safety", f"{readiness.get('rollback_safety', 90)}/100", "Zero-Downtime Safe")
+        score_corr = readiness.get('correctness', 95)
+        score_sec = readiness.get('security', 90)
+        score_test = readiness.get('testing', 80)
+        score_perf = readiness.get('performance', 90)
+        score_obs = readiness.get('observability', 85)
+        score_rb = readiness.get('rollback_safety', 90)
 
-    # ── Tab 3: Behavior Diff & Blast Radius Map
+        with r1:
+            st.metric("1. Correctness & Logic", f"{score_corr}/100", "Zero Logic Flaws" if score_corr == 100 else f"-{100-score_corr} Penalty")
+            st.metric("2. AppSec & OWASP", f"{score_sec}/100", "Clean Parameterization" if score_sec == 100 else f"-{100-score_sec} Threat Detected")
+        with r2:
+            st.metric("3. Edge Test Coverage", f"{score_test}/100", "Boundary Validated" if score_test >= 80 else "Edge-Case Failure Risk")
+            st.metric("4. Performance & Scalability", f"{score_perf}/100", "Optimal Time Complexity" if score_perf >= 90 else "Performance Degradation")
+        with r3:
+            st.metric("5. 3 AM Observability", f"{score_obs}/100", "Telemetry Logged" if score_obs >= 80 else "Uncaught Exceptions")
+            st.metric("6. Rollback Safety", f"{score_rb}/100", "Zero-Downtime Safe" if score_rb >= 90 else "High Outage Risk")
+
+    # ── Tab 4: Behavior Diff & Blast Radius Map
     with tab_behavior:
         st.subheader("🌐 Semantic Behavior Diff & Cross-Module Blast Radius")
         
@@ -181,7 +219,7 @@ def render_results_view(
         else:
             st.info("No external downstream callers affected.")
 
-    # ── Tab 4: Actionable Findings Breakdown & Export
+    # ── Tab 5: Actionable Findings Breakdown & Export
     with tab_issues:
         st.subheader("Actionable Issue Matrix")
         if guarded_findings:
@@ -203,13 +241,13 @@ def render_results_view(
 
         render_export_buttons(filename, guarded_findings, health_score, grade, active_ai_label)
 
-    # ── Tab 5: Annotated Source Code Viewer
+    # ── Tab 6: Annotated Source Code Viewer
     with tab_source:
         st.subheader("📄 Annotated Source Code Viewer")
         st.caption("Lines with security or reliability issues are highlighted with severity tags:")
         render_annotated_code_viewer(target_code, guarded_findings, filename, language=lang_key)
 
-    # ── Tab 6: Stage-by-Stage Agent Trace
+    # ── Tab 7: Stage-by-Stage Agent Trace
     with tab_traces:
         st.subheader(f"🧭 Deterministic Pipeline State Machine ({active_ai_label})")
         st.markdown("Structured JSON payloads exchanged between the sequential verification stages:")
