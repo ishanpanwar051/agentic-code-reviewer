@@ -119,14 +119,16 @@ def render_results_view(
             else:
                 display_findings = guarded_findings
 
-            render_auto_fix_banner(filename, target_code, guarded_findings, lang_key=lang_key)
-            st.markdown("---")
+            st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
 
             if not display_findings:
                 st.info(f"No findings matching the '{selected_filter}' filter.")
             else:
                 for f in display_findings:
                     render_diff_card(filename, f, active_ai_label)
+
+            st.markdown("---")
+            render_auto_fix_banner(filename, target_code, guarded_findings, lang_key=lang_key)
 
     # ── Tab 2: 6-Pillar Production Readiness Scorecard
     with tab_readiness:

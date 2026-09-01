@@ -21,7 +21,7 @@ def render_auto_fix_banner(
     if not guarded_findings:
         return
 
-    with st.expander("✨ 1-Click In-Browser Auto-Fix (Apply All Recommendations)", expanded=True):
+    with st.expander("✨ 1-Click In-Browser Auto-Fix (Apply All Recommendations)", expanded=False):
         st.markdown("Automatically applies all validated safe replacements to produce clean, hardened code:")
 
         refactored_code = generate_refactored_code(original_code, guarded_findings)
