@@ -20,6 +20,7 @@ from ui.analytics import (
     call_gemini,
     call_groq,
     call_openai,
+    detect_language,
     run_static_analysis,
 )
 from ui.components.header import render_header
