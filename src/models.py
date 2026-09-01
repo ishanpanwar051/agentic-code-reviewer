@@ -1,115 +1,60 @@
-"""Domain data models for PR Sage using Pydantic v2.
+"""Domain data models for PR Sage — AI Software Verification & Reliability Platform.
 
-Strongly-Typed Contracts:
-- Accurate Line-Level Mapping: Tracks exact target line numbers, code snippets, and evidence.
-- Multi-Tier Severity: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'SUGGESTION'.
-- Evidence & Calibrated Confidence: Every reported issue must provide concrete evidence and confidence scores.
+Pydantic v2 Strong Typing Contracts:
+- Proof of Concept (PoC) & Sandbox Verification Models.
+- Cross-File Blast Radius & Behavior Diff Models.
+- 6-Pillar Production Readiness Scorecard.
+- Evidence-Backed Review Findings.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any, Literal
+import uuid
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
-class DiffLine(BaseModel):
-    """Represents a single line within a unified diff hunk."""
+class ProofOfConcept(BaseModel):
+    """Runnable test case / proof that demonstrates an issue or validates a fix."""
 
-    model_config = ConfigDict(frozen=True)
-
-    type: Literal["+", "-", " "] = Field(
-        description="'+' for added line, '-' for removed line, ' ' for unchanged context line."
-    )
-    old_lineno: int | None = Field(
-        default=None,
-        description="Line number in the base/old file version (None for added lines).",
-    )
-    new_lineno: int | None = Field(
-        default=None,
-        description="Line number in the target/new file version (None for removed lines).",
-    )
-    content: str = Field(
-        description="The line content without the leading '+', '-', or ' ' diff marker.",
-    )
+    code: str = Field(description="Runnable reproduction test or snippet.")
+    runtime_output: str = Field(default="", description="Observed runtime error / output in sandbox.")
+    verified: bool = Field(default=False, description="True if the failure was proven in runtime execution.")
+    reproduced: bool = Field(default=False, description="True if reproduction script successfully triggered the bug.")
 
 
-class DiffHunk(BaseModel):
-    """Represents a contiguous block of diff changes starting with a unified diff header."""
+class BlastRadiusItem(BaseModel):
+    """Represents a downstream component or API affected by a modified function."""
 
-    old_start: int = Field(description="Starting line in old file.")
-    old_lines: int = Field(description="Number of lines in old file hunk.")
-    new_start: int = Field(description="Starting line in new file.")
-    new_lines: int = Field(description="Number of lines in new file hunk.")
-    header: str = Field(description="Full hunk header line, e.g., '@@ -10,5 +10,7 @@ def foo():'.")
-    lines: list[DiffLine] = Field(
-        default_factory=list,
-        description="Sequential list of diff lines within this hunk.",
-    )
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def added_line_numbers(self) -> list[int]:
-        """Returns the list of exact new line numbers for added lines ('+') in this hunk."""
-        return [
-            line.new_lineno
-            for line in self.lines
-            if line.type == "+" and line.new_lineno is not None
-        ]
+    target: str = Field(description="Affected downstream function, endpoint, or worker.")
+    file_path: str = Field(description="File containing the affected component.")
+    risk_level: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"] = Field(default="MEDIUM")
+    impact_reason: str = Field(description="Why this component is impacted by the change.")
 
 
-class FileDiff(BaseModel):
-    """Represents changes in a single file parsed from a unified git diff."""
+class ProductionReadinessScore(BaseModel):
+    """Comprehensive 6-pillar production readiness assessment."""
 
-    old_path: str = Field(description="Original file path prior to PR changes.")
-    new_path: str = Field(description="Target file path after PR changes.")
-    change_type: Literal["ADDED", "MODIFIED", "DELETED", "RENAMED"] = Field(
-        description="Categorized type of file change."
-    )
-    is_binary: bool = Field(
-        default=False,
-        description="True if the file is a binary asset (images, binaries, etc.).",
-    )
-    is_rename: bool = Field(
-        default=False,
-        description="True if the file is a 100% similarity rename without functional changes.",
-    )
-    hunks: list[DiffHunk] = Field(
-        default_factory=list,
-        description="Parsed diff hunks containing modified lines.",
-    )
-    total_additions: int = Field(
-        default=0,
-        description="Total number of '+' lines added in this file.",
-    )
-    total_deletions: int = Field(
-        default=0,
-        description="Total number of '-' lines removed in this file.",
+    correctness: int = Field(default=95, ge=0, le=100, description="Correctness & Logic Safety (0-100)")
+    security: int = Field(default=90, ge=0, le=100, description="AppSec & OWASP Compliance (0-100)")
+    testing: int = Field(default=80, ge=0, le=100, description="Edge-Case Test Coverage (0-100)")
+    performance: int = Field(default=90, ge=0, le=100, description="Performance & Complexity (0-100)")
+    observability: int = Field(default=85, ge=0, le=100, description="Logging & Tracing Readiness (0-100)")
+    rollback_safety: int = Field(default=90, ge=0, le=100, description="Zero-Downtime Rollback Safety (0-100)")
+    overall_score: float = Field(default=8.8, ge=0.0, le=10.0, description="Overall Composite Score (0.0 - 10.0)")
+    recommendation: Literal["SAFE TO MERGE", "HUMAN REVIEW REQUIRED", "BLOCK MERGE"] = Field(
+        default="SAFE TO MERGE"
     )
 
 
-class CodeChunk(BaseModel):
-    """A bounded segment of code extracted for LLM analysis with strict line mapping."""
+class BehaviorDiffItem(BaseModel):
+    """Semantic before-and-after runtime behavior change."""
 
-    chunk_id: int = Field(description="Sequential 0-indexed identifier for the chunk within a file.")
-    file_path: str = Field(description="Relative file path.")
-    start_line: int = Field(description="First new-file line number covered in this chunk.")
-    end_line: int = Field(description="Last new-file line number covered in this chunk.")
-    lines: list[str] = Field(
-        default_factory=list,
-        description="The code lines contained in this chunk for LLM review.",
-    )
-    line_numbers: list[int] = Field(
-        default_factory=list,
-        description="Exact 1-indexed line numbers corresponding to lines in this chunk.",
-    )
-    added_line_numbers: list[int] = Field(
-        default_factory=list,
-        description="Exact new line numbers that were newly added/modified inside this chunk.",
-    )
-    is_partial: bool = Field(
-        default=False,
-        description="True if the file was split into multiple chunks due to size limits.",
-    )
+    scope: str = Field(description="Function or module scope.")
+    before_behavior: str = Field(description="Execution behavior before this PR.")
+    after_behavior: str = Field(description="Execution behavior after this PR.")
+    risk_level: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"] = Field(default="LOW")
 
 
 class ReviewComment(BaseModel):
@@ -140,6 +85,14 @@ class ReviewComment(BaseModel):
     evidence: str | None = Field(
         default=None,
         description="Concrete trace or proof demonstrating why the bug is reachable and triggers incorrect behavior.",
+    )
+    impact: str | None = Field(
+        default=None,
+        description="Downstream architectural or runtime failure impact.",
+    )
+    proof_of_concept: ProofOfConcept | None = Field(
+        default=None,
+        description="Runnable proof-of-concept script proving this vulnerability/bug.",
     )
     comment: str = Field(
         default="",
@@ -192,20 +145,6 @@ class ReviewComment(BaseModel):
         return data
 
 
-class StageResult(BaseModel):
-    """The structured output produced by an individual pipeline stage."""
-
-    stage: str = Field(description="Name of the executing stage (e.g. understand, security, error_handling, review).")
-    findings: list[ReviewComment] = Field(
-        default_factory=list,
-        description="Review comments detected during this specific stage.",
-    )
-    notes: str = Field(
-        default="",
-        description="Contextual observations or metadata passed to subsequent stages in agent state.",
-    )
-
-
 class ReviewTelemetry(BaseModel):
     """Operational telemetry tracking tokens, latency, and cost per review run."""
 
@@ -216,26 +155,28 @@ class ReviewTelemetry(BaseModel):
     estimated_cost_usd: float = Field(default=0.0, description="Estimated inference cost in USD.")
     model_name: str = Field(default="hybrid-ast", description="Active inference engine / model identifier.")
     stages_completed: list[str] = Field(
-        default_factory=lambda: ["understand", "security", "error_handling", "guardrails"],
+        default_factory=lambda: ["understand", "security", "error_handling", "guardrails", "sandbox_verify"],
         description="Sequential pipeline stages completed.",
     )
 
 
 class ReviewResult(BaseModel):
-    """The aggregated, deduplicated, and guardrail-filtered final review for a PR."""
+    """The aggregated, deduplicated, and guardrail-filtered final review for a PR or file."""
 
-    comments: list[ReviewComment] = Field(
-        default_factory=list,
-        description="Final list of line-level review comments ready for posting.",
-    )
+    review_id: str = Field(default_factory=lambda: f"rev-{int(time.time()*1000)}", alias="reviewId")
+    issues: list[ReviewComment] = Field(default_factory=list, alias="comments")
+    comments: list[ReviewComment] = Field(default_factory=list)
     summary: str = Field(
         default="",
         description="High-level markdown summary describing PR changes, risks, and recommendations.",
     )
-    telemetry: ReviewTelemetry = Field(
-        default_factory=ReviewTelemetry,
-        description="Latency, token, and cost telemetry for this review run.",
-    )
+    score: float = Field(default=10.0, description="10-point code quality score.")
+    health_score: int = Field(default=100, description="0-100 security health score.")
+    grade: str = Field(default="A+", description="Letter grade (A+, A, B, C, F).")
+    readiness: ProductionReadinessScore = Field(default_factory=ProductionReadinessScore)
+    behavior_diff: list[BehaviorDiffItem] = Field(default_factory=list)
+    blast_radius: list[BlastRadiusItem] = Field(default_factory=list)
+    telemetry: ReviewTelemetry = Field(default_factory=ReviewTelemetry)
     patch_content: str = Field(
         default="",
         description="Automated git unified patch (git apply fix.patch) for 1-click refactoring.",

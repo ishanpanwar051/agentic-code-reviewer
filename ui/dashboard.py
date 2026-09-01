@@ -221,7 +221,7 @@ if run_btn:
 cached = get_cached_review()
 
 if cached is not None:
-    meta, findings, traces, exec_time_ms, active_ai_label = cached
+    meta, findings, traces, exec_time_ms, active_ai_label, review_id = cached
     st.markdown("---")
     render_results_view(
         filename=active_filename,
