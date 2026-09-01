@@ -1,18 +1,15 @@
 """Domain data models for PR Sage using Pydantic v2.
 
-Interview Rationale (WHY):
-- Strongly-Typed Contracts: Eliminates ambiguous dictionary passing between stages. Every stage receives
-  and emits validated Pydantic models.
-- Accurate Line-Level Mapping: Hunk, DiffLine, and CodeChunk models track exact target line numbers, preventing
-  hallucinated comment positioning on GitHub PRs.
-- Operational Telemetry & Confidence: Tracks token counts, latency percentiles, estimated costs, and confidence
-  thresholds to guarantee production SLA and noise-free reviews.
+Strongly-Typed Contracts:
+- Accurate Line-Level Mapping: Tracks exact target line numbers, code snippets, and evidence.
+- Multi-Tier Severity: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'SUGGESTION'.
+- Evidence & Calibrated Confidence: Every reported issue must provide concrete evidence and confidence scores.
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class DiffLine(BaseModel):
@@ -91,12 +88,7 @@ class FileDiff(BaseModel):
 
 
 class CodeChunk(BaseModel):
-    """A bounded segment of code extracted for LLM analysis with strict line mapping.
-
-    Interview Rationale:
-    - LLMs have finite context windows and high latency on large files.
-    - Chunks break large diffs while preserving exact original line numbers for comment placement.
-    """
+    """A bounded segment of code extracted for LLM analysis with strict line mapping."""
 
     chunk_id: int = Field(description="Sequential 0-indexed identifier for the chunk within a file.")
     file_path: str = Field(description="Relative file path.")
@@ -121,33 +113,83 @@ class CodeChunk(BaseModel):
 
 
 class ReviewComment(BaseModel):
-    """A structured review comment targeting a specific line on a PR."""
+    """A structured, evidence-backed review finding targeting a specific line on a codebase or PR."""
 
-    path: str = Field(description="Relative file path targeted by this comment.")
-    line: int = Field(description="Target 1-indexed line number in the new file version.")
-    severity: Literal["critical", "warning", "info"] = Field(
-        description="Severity level: 'critical' for high risk bugs/vulnerabilities, 'warning' for bad practices, 'info' for style."
+    path: str = Field(default="module.py", description="Relative file path targeted by this comment.")
+    line: int = Field(default=1, description="Target 1-indexed line number in the source file.")
+    severity: str = Field(
+        default="HIGH",
+        description="Severity classification: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', or 'SUGGESTION'.",
     )
-    category: Literal["bug", "security", "performance", "style", "clarity", "reliability"] = Field(
-        description="Functional classification of the finding."
+    category: str = Field(
+        default="BUG",
+        description="Functional classification: 'BUG', 'SECURITY', 'RELIABILITY', 'PERFORMANCE', 'STYLE', or 'CLARITY'.",
+    )
+    title: str = Field(
+        default="Code Issue",
+        description="Short, concise summary title of the finding.",
+    )
+    code: str | None = Field(
+        default=None,
+        description="Exact code snippet extracted from the source line.",
+    )
+    explanation: str = Field(
+        default="",
+        description="Clear explanation of why this code is problematic and what error/vulnerability it causes.",
+    )
+    evidence: str | None = Field(
+        default=None,
+        description="Concrete trace or proof demonstrating why the bug is reachable and triggers incorrect behavior.",
     )
     comment: str = Field(
-        description="Actionable explanation of the issue with suggested fix or explanation.",
+        default="",
+        description="Unified human-readable review comment.",
     )
     cwe_id: str | None = Field(
         default=None,
-        description="Common Weakness Enumeration ID (e.g. CWE-89 for SQLi, CWE-798 for Secrets).",
+        description="Common Weakness Enumeration ID (e.g. CWE-89, CWE-798, CWE-193, CWE-369).",
     )
     suggested_fix: str | None = Field(
         default=None,
-        description="Concrete replacement code snippet resolving the issue.",
+        description="Concrete, syntax-valid replacement code snippet resolving the issue.",
     )
     confidence: float = Field(
         default=0.90,
         ge=0.0,
         le=1.0,
-        description="Calibrated probability (0.0 to 1.0) that this finding is a true positive.",
+        description="Calibrated confidence probability (0.0 to 1.0) that this finding is a genuine true positive.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Normalize severity
+            sev = str(data.get("severity", "HIGH")).upper()
+            if sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "SUGGESTION"):
+                data["severity"] = sev
+            elif sev == "WARNING":
+                data["severity"] = "HIGH"
+            elif sev == "INFO":
+                data["severity"] = "LOW"
+            else:
+                data["severity"] = "MEDIUM"
+
+            # Normalize explanation / comment
+            expl = data.get("explanation") or data.get("comment") or data.get("description") or ""
+            data["explanation"] = expl
+            if not data.get("comment"):
+                data["comment"] = expl
+
+            # Normalize code snippet
+            if not data.get("code") and data.get("bad_code"):
+                data["code"] = data["bad_code"]
+
+            # Normalize fix
+            if not data.get("suggested_fix") and data.get("fix_code"):
+                data["suggested_fix"] = data["fix_code"]
+
+        return data
 
 
 class StageResult(BaseModel):
@@ -208,7 +250,7 @@ class ReviewResult(BaseModel):
 class CodeReviewRequest(BaseModel):
     """Request payload for reviewing raw code snippets."""
 
-    code: str = Field(..., description="Raw Python source code or git unified diff to review.")
+    code: str = Field(..., description="Raw source code or git unified diff to review.")
     filename: str = Field(default="module.py", description="Target filename for line number mapping.")
     model: str = Field(default="hybrid-ast", description="Model engine: 'hybrid-ast', 'gemini-2.0-flash', 'claude-3-5-sonnet', 'gpt-4o', 'groq'.")
     api_key: str | None = Field(default=None, description="Optional API key for proprietary LLM providers.")

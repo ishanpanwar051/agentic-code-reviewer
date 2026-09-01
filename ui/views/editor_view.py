@@ -6,7 +6,7 @@ from __future__ import annotations
 import html
 from typing import Tuple
 import streamlit as st
-from ui.analytics import PRESET_SNIPPETS, detect_language
+from ui.analytics import detect_language
 from ui.state import pop_target_override
 
 
@@ -14,10 +14,10 @@ def render_editor_view() -> Tuple[str, str]:
     """Renders the custom code/diff editor and returns (code, filename)."""
     override_code = pop_target_override()
 
-    if "editor_filename" not in st.session_state:
-        st.session_state["editor_filename"] = "payment_service.py"
     if "editor_code" not in st.session_state:
-        st.session_state["editor_code"] = PRESET_SNIPPETS["🐍 Python: Vulnerable App (SQLi + Secret + Bare Except)"]
+        st.session_state["editor_code"] = ""
+    if "editor_filename" not in st.session_state:
+        st.session_state["editor_filename"] = "main.cpp"
 
     if override_code is not None:
         st.session_state["editor_code"] = override_code
@@ -25,24 +25,40 @@ def render_editor_view() -> Tuple[str, str]:
     c1, c2 = st.columns([1, 2])
     with c1:
         active_filename = st.text_input(
-            "Target Filename (e.g. code.cpp, payment_service.py, main.go, Service.java):",
+            "Target Filename (e.g. main.cpp, app.py, server.go, Service.java):",
             value=st.session_state["editor_filename"],
             key="custom_editor_filename_input",
         )
-        st.session_state["editor_filename"] = active_filename
 
     target_code = st.text_area(
         "Code Editor",
         value=st.session_state["editor_code"],
+        placeholder="// Paste your C++, Python, Java, Go, Rust, JavaScript or PHP code here...",
         height=240,
         label_visibility="collapsed",
         key="custom_editor_code_textarea",
     )
     st.session_state["editor_code"] = target_code
 
-    # Real-time detected engine badge
+    # Real-time language detection & smart filename extension sync
+    lang_key, det_name = detect_language(target_code or " ", active_filename)
+    if target_code.strip():
+        if lang_key in ("cpp", "c") and active_filename.endswith((".py", ".pyw", "payment_service.py")):
+            active_filename = "main.cpp"
+        elif lang_key == "python" and active_filename.endswith((".cpp", ".c", ".h")):
+            active_filename = "app.py"
+        elif lang_key == "java" and active_filename.endswith((".py", ".cpp")):
+            active_filename = "Main.java"
+        elif lang_key == "go" and active_filename.endswith((".py", ".cpp")):
+            active_filename = "main.go"
+        elif lang_key == "rust" and active_filename.endswith((".py", ".cpp")):
+            active_filename = "main.rs"
+        elif lang_key in ("javascript", "typescript") and active_filename.endswith((".py", ".cpp")):
+            active_filename = "index.js"
+
+    st.session_state["editor_filename"] = active_filename
+
     with c2:
-        _, det_name = detect_language(target_code, active_filename)
         safe_det = html.escape(det_name)
         st.markdown(
             f"""

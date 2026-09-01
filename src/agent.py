@@ -40,101 +40,29 @@ console = Console()
 
 
 def _static_ast_audit(code: str, filename: str) -> list[ReviewComment]:
-    """Offline Python AST and security pattern scanner for resilient zero-API-key fallback."""
+    """Offline polyglot AST and security pattern scanner for resilient zero-API-key fallback."""
+    from ui.analytics import run_static_analysis
+
+    meta, raw_findings, traces = run_static_analysis(code, filename)
     findings: list[ReviewComment] = []
-    lines = code.splitlines()
 
-    # 1. AST Syntax Check
-    if filename.endswith((".py", ".pyw")):
-        try:
-            ast.parse(code)
-        except SyntaxError as syn:
-            findings.append(
-                ReviewComment(
-                    path=filename,
-                    line=syn.lineno or 1,
-                    severity="critical",
-                    category="bug",
-                    cwe_id="CWE-1188",
-                    comment=f"SyntaxError: {syn.msg}. Code fails to compile.",
-                    suggested_fix=None,
-                    confidence=0.99,
-                )
+    for f in raw_findings:
+        findings.append(
+            ReviewComment(
+                path=filename,
+                line=f.get("line", 1),
+                severity=f.get("severity", "HIGH"),
+                category=f.get("category", "BUG"),
+                title=f.get("title", "Code Issue"),
+                code=f.get("bad_code", f.get("code")),
+                explanation=f.get("description", f.get("comment", "")),
+                evidence=f.get("evidence"),
+                comment=f.get("description", f.get("comment", "")),
+                cwe_id=f.get("cwe"),
+                suggested_fix=f.get("fix_code", f.get("fix")),
+                confidence=f.get("confidence", 0.90),
             )
-
-    # 2. Pattern Scans
-    for idx, raw_line in enumerate(lines, start=1):
-        line = raw_line.strip()
-        # SQL Injection
-        if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE).*(f["\']|%\s*\w+|\.format\(|\+\s*\w+)', line) or ("execute(" in line and 'f"' in line):
-            findings.append(
-                ReviewComment(
-                    path=filename,
-                    line=idx,
-                    severity="critical",
-                    category="security",
-                    cwe_id="CWE-89",
-                    comment="SQL Injection Risk: SQL query constructed via unescaped string interpolation.",
-                    suggested_fix="cursor.execute('SELECT * FROM table WHERE col = ?', (param,))",
-                    confidence=0.95,
-                )
-            )
-        # Hardcoded Secret Key
-        if re.search(r'(?i)(secret_key|api_key|password|jwt_secret|private_key|token|auth_token)\s*[:=]\s*["\'][a-zA-Z0-9_\-!@#$]{8,}["\']', line):
-            findings.append(
-                ReviewComment(
-                    path=filename,
-                    line=idx,
-                    severity="critical",
-                    category="security",
-                    cwe_id="CWE-798",
-                    comment="Hardcoded Secret: Sensitive token or credential is hardcoded in source code.",
-                    suggested_fix='import os\nAPI_KEY = os.getenv("API_KEY", "")',
-                    confidence=0.95,
-                )
-            )
-        # Bare except
-        if re.search(r'^\s*except\s*:\s*(pass)?', raw_line):
-            findings.append(
-                ReviewComment(
-                    path=filename,
-                    line=idx,
-                    severity="warning",
-                    category="reliability",
-                    cwe_id="CWE-391",
-                    comment="Silent Exception Swallowing: Bare `except:` drops all unhandled exceptions without logging.",
-                    suggested_fix="except Exception as exc:\n    logger.error(f'Error: {exc}')\n    raise",
-                    confidence=0.95,
-                )
-            )
-        # Unchecked None dereference
-        if re.search(r'\.get\([^)]+\)\.(upper|lower|split|strip|get)\(', line):
-            findings.append(
-                ReviewComment(
-                    path=filename,
-                    line=idx,
-                    severity="warning",
-                    category="reliability",
-                    cwe_id="CWE-476",
-                    comment="Unchecked NoneType Dereference: Chained call on dictionary `.get()` may raise AttributeError.",
-                    suggested_fix='val = data.get("key")\nres = val.upper() if val is not None else None',
-                    confidence=0.85,
-                )
-            )
-        # Command Injection
-        if re.search(r'subprocess\.(run|Popen|call|check_output)\(.*shell\s*=\s*True', line) or re.search(r'os\.system\(', line):
-            findings.append(
-                ReviewComment(
-                    path=filename,
-                    line=idx,
-                    severity="critical",
-                    category="security",
-                    cwe_id="CWE-78",
-                    comment="OS Command Injection: `shell=True` or `os.system` with dynamic arguments allows arbitrary command execution.",
-                    suggested_fix='subprocess.run(["cmd", "arg1", "arg2"], shell=False)',
-                    confidence=0.95,
-                )
-            )
+        )
 
     return findings
 

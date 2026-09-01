@@ -35,7 +35,7 @@ def test_theme_and_styles_generation() -> None:
 def test_polyglot_language_detection() -> None:
     """Verifies accurate language detection across various extensions and signatures."""
     assert detect_language("print('hello')", "test.py")[0] == "python"
-    assert detect_language("#include <iostream>", "main.cpp")[0] == "cpp"
+    assert detect_language("#include <iostream>", "payment_service.py")[0] == "cpp"
     assert detect_language("package main", "server.go")[0] == "go"
     assert detect_language("fn main() {}", "lib.rs")[0] == "rust"
     assert detect_language("public class App {}", "App.java")[0] == "java"
@@ -96,6 +96,44 @@ void process(int amount) {
     sqli_findings = [f for f in findings if f["cwe"] == "CWE-89"]
     assert len(sqli_findings) > 0
     assert "sqlite3_prepare_v2" in sqli_findings[0]["fix_code"]
+
+
+def test_cpp_loop_and_vla_detection() -> None:
+    """Verifies that off-by-one loops, VLA arrays, and div-by-zero are accurately caught in C++."""
+    user_cpp = """#include <iostream>
+using namespace std;
+
+int main() {
+    int n;
+    cin >> n;
+
+    int arr[n];
+
+    for (int i = 0; i <= n; i++) {
+        cin >> arr[i];
+    }
+
+    int sum = 0;
+
+    for (int i = 0; i < n; i++) {
+        sum += arr[i];
+    }
+
+    cout << "Average: " << sum / n << endl;
+
+    return 0;
+}"""
+    meta, findings, traces = run_static_analysis(user_cpp, "main.cpp")
+    assert meta["language"] == "C++"
+
+    # Should detect off-by-one loop i <= n
+    off_findings = [f for f in findings if f["cwe"] == "CWE-193"]
+    assert len(off_findings) > 0
+    assert "i < n" in off_findings[0]["fix_code"]
+
+    # Should detect division by zero risk
+    div_findings = [f for f in findings if f["cwe"] == "CWE-369"]
+    assert len(div_findings) > 0
 
 
 def test_calculate_health_score() -> None:

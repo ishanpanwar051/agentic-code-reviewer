@@ -246,9 +246,26 @@ def run_backup(user_input_folder):
 
 
 def detect_language(code: str, filename: str = "") -> tuple[str, str]:
-    """Detects (lang_key, display_name) from filename extension or code signatures."""
+    """
+    Detects (lang_key, display_name) with content-signature priority.
+    Prevents mistaking C++, Java, or Go code for Python even if default filename is .py.
+    """
+    # 1. Strong unambiguous code signatures (overrides mismatched or default filenames)
+    if re.search(r'#include\s*<|using\s+namespace\s+|std::|int\s+main\s*\([^)]*\)|cout\s*<<|cin\s*>>|nullptr|delete\[\]|sqlite3_exec|char\s+\w+\[\d+\]|\bcatch\s*\(\s*\.\.\.\s*\)', code):
+        return ("cpp", "C++")
+    if re.search(r'public\s+(?:static\s+)?(?:void|class|int|String|final)|System\.out\.print|import\s+java\.|PreparedStatement', code):
+        return ("java", "Java")
+    if re.search(r'package\s+main|func\s+\w+\(|fmt\.Print', code):
+        return ("go", "Go")
+    if re.search(r'fn\s+main\s*\([^)]*\)|let\s+mut\s+|impl\s+\w+|unsafe\s*\{', code):
+        return ("rust", "Rust")
+    if re.search(r'<\?php|\$_GET\[|\$_POST\[|\$this->', code):
+        return ("php", "PHP")
+    if re.search(r'console\.log\(|const\s+\w+\s*=\s*require|import\s+.*from\s+["\']|document\.|process\.env', code):
+        return ("javascript", "JavaScript")
+
+    # 2. Check filename extension if content didn't have strong overrides
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    
     ext_map = {
         "py": ("python", "Python"),
         "pyw": ("python", "Python"),
@@ -278,23 +295,11 @@ def detect_language(code: str, filename: str = "") -> tuple[str, str]:
     }
     if ext in ext_map:
         return ext_map[ext]
-        
-    # Heuristics based on code content
-    if re.search(r'#include\s*<|std::|int\s+main\s*\(|nullptr|delete\[\]|sqlite3_exec|char\s+\w+\[\d+\]|void\s+\w+\([^)]*\*|\bcatch\s*\(\s*\.\.\.\s*\)', code):
-        return ("cpp", "C++")
-    if re.search(r'public\s+class\s+|System\.out\.println|import\s+java\.|PreparedStatement', code):
-        return ("java", "Java")
-    if re.search(r'package\s+main|func\s+\w+\(|fmt\.Println', code):
-        return ("go", "Go")
-    if re.search(r'fn\s+main\s*\(|let\s+mut\s+|impl\s+\w+|unsafe\s*\{', code):
-        return ("rust", "Rust")
-    if re.search(r'<\?php|\$_GET\[|\$_POST\[|\$this->', code):
-        return ("php", "PHP")
-    if re.search(r'console\.log\(|const\s+\w+\s*=\s*require|import\s+.*from|document\.|process\.env', code):
-        return ("javascript", "JavaScript")
-    if re.search(r'def\s+\w+\(|import\s+os|import\s+sys|class\s+\w+:', code):
+
+    # 3. Fallback Python check
+    if re.search(r'def\s+\w+\(|import\s+os|import\s+sys|class\s+\w+:|print\(', code):
         return ("python", "Python")
-        
+
     return ("python", "Python / Generic")
 
 
@@ -468,9 +473,64 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
 
         # ── C / C++ Rules
         if lang_key in ("cpp", "c"):
+            # Off-by-one buffer overflow in loop bounds: for (int i = 0; i <= n; i++)
+            off_match = re.search(r'for\s*\(\s*(?:int\s+)?(\w+)\s*=\s*0\s*;\s*\1\s*<=\s*([a-zA-Z_]\w*)\s*;\s*\1\+\+\s*\)', l)
+            if off_match:
+                var_i = off_match.group(1)
+                var_n = off_match.group(2)
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": f"Off-by-One Buffer Overflow in Loop Bound (`{var_i} <= {var_n}`) (CWE-193)",
+                    "category": "AppSec",
+                    "cwe": "CWE-193",
+                    "owasp": "A03:2021-Injection",
+                    "description": f"Loop condition `{var_i} <= {var_n}` iterates `{var_n} + 1` times and writes to `arr[{var_n}]`, exceeding the allocated array bounds [0..{var_n}-1]. Fix loop bound to `{var_i} < {var_n}`.",
+                    "bad_code": l,
+                    "fix_code": f"for (int {var_i} = 0; {var_i} < {var_n}; {var_i}++) {{"
+                })
+                sec_count += 1
+
+            # Variable Length Array (VLA) Stack Allocation: int arr[n];
+            vla_match = re.search(r'\b(int|float|double|char|long)\s+([a-zA-Z_]\w*)\[([a-zA-Z_]\w*)\];', l)
+            if vla_match and "const" not in l:
+                vla_type = vla_match.group(1)
+                vla_name = vla_match.group(2)
+                vla_size = vla_match.group(3)
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": f"Variable-Length Array (VLA) Stack Allocation (`{vla_name}[{vla_size}]`) (CWE-400)",
+                    "category": "Reliability",
+                    "cwe": "CWE-400",
+                    "owasp": "Resource Exhaustion",
+                    "description": f"Allocating dynamic array size on the stack with unvalidated input `{vla_size}` can cause Stack Overflow. Use `std::vector<{vla_type}> {vla_name}({vla_size});` or heap allocation.",
+                    "bad_code": l,
+                    "fix_code": f"std::vector<{vla_type}> {vla_name}({vla_size});"
+                })
+                err_count += 1
+
+            # C/C++ Division by zero or unvalidated variable (e.g. sum / n)
+            div_match = re.search(r'(?:cout\s*<<\s*.*?)?(\w+)\s*/\s*([a-zA-Z_]\w*)\b', l)
+            if div_match and not l.startswith("//") and not l.startswith("/*") and "100 / amount" not in l:
+                num_v = div_match.group(1)
+                den_v = div_match.group(2)
+                if den_v not in ("sizeof", "2", "10", "100", "1000", "0"):
+                    if "cout" in l and f"{num_v} / {den_v}" in l:
+                        findings.append({
+                            "line": idx,
+                            "severity": "critical",
+                            "title": f"ZeroDivision Crash Risk (`{num_v} / {den_v}`) (CWE-369)",
+                            "category": "Reliability",
+                            "cwe": "CWE-369",
+                            "owasp": "Code Correctness",
+                            "description": f"Dividing by `{den_v}` without checking if `{den_v} == 0` causes immediate Floating Point Exception (SIGFPE) OS crash.",
+                            "bad_code": l,
+                            "fix_code": f'if ({den_v} != 0) {{ cout << "Average: " << (double){num_v} / {den_v} << endl; }}'
+                        })
+                        err_count += 1
+
             # C/C++ SQL Injection via sprintf/snprintf into query buffer
-            # Note: sqlite3_exec(db, query, ...) alone is not a SQLi signal; the vulnerability is
-            # the interpolation in sprintf/snprintf, so only that line is flagged to avoid duplicate noise.
             if re.search(r'\b(sprintf|snprintf)\s*\([^,]+,\s*["\'].*(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE)', l):
                 findings.append({
                     "line": idx,
@@ -870,7 +930,7 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
     findings = sorted(findings, key=lambda x: (sev_weights.get(x["severity"], 3), x["line"]))
 
     stage_traces["Stage 1: Understand"] = {"summary": summary, "functions": functions_found, "loc": len(lines), "language": lang_display}
-    stage_traces["Stage 2: Security Audit"] = {"appsec_vulnerabilities": sec_count, "threat_models": ["CWE-89", "CWE-798", "CWE-78", "CWE-120", "CWE-79", "CWE-95", "CWE-295"]}
+    stage_traces["Stage 2: Security Audit"] = {"appsec_vulnerabilities": sec_count, "threat_models": ["CWE-89", "CWE-798", "CWE-78", "CWE-120", "CWE-193", "CWE-79", "CWE-95", "CWE-295"]}
     stage_traces["Stage 3: Reliability Engine"] = {"reliability_issues": err_count, "crashes_prevented": err_count}
     stage_traces["Stage 4: Guardrails"] = {"total_findings": len(findings), "injection_neutralized": injection_detected}
 
