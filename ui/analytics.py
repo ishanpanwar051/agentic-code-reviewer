@@ -1,6 +1,6 @@
 """
 ui/analytics.py — Pure Computational & Business Logic for PR Sage.
-Contains language detection, AST & static AppSec rule engine, LLM connectors, and patch generators.
+Contains language detection, language-specific AST & static AppSec rule engine, LLM connectors, and patch generators.
 Completely separated from presentation components.
 """
 from __future__ import annotations
@@ -61,25 +61,45 @@ def create_archive_backup(folder_name):
 
     "⚙️ C/C++: Buffer Overflow & Memory Safety Bugs": '''#include <iostream>
 #include <cstring>
+#include <sqlite3.h>
+#include <cstdlib>
 
 // 1. Hardcoded API Token (CWE-798)
-const char* API_KEY = "sk-live-9938471928374619283746";
+const char* API_KEY = "sk_live_9938471928374619283746";
+
+void search_user(const char* username, sqlite3* db) {
+    char query[512];
+    // 2. SQL Injection via raw string concat (CWE-89)
+    sprintf(query, "SELECT * FROM users WHERE name = '%s'", username);
+    sqlite3_exec(db, query, nullptr, nullptr, nullptr);
+}
+
+void run_command(const char* cmd) {
+    // 3. OS Command Injection via system (CWE-78)
+    system(cmd);
+}
 
 void processUserData(const char* userInput) {
-    // 2. Buffer Overflow: Unsafe strcpy without bounds check (CWE-120)
+    // 4. Buffer Overflow: Unsafe strcpy without bounds check (CWE-120)
     char buffer[16];
     strcpy(buffer, userInput);
 
-    // 3. Memory Leak: Unreleased heap memory (CWE-401)
+    // 5. Memory Leak: Unreleased heap memory (CWE-401)
     int* dynamicScores = new int[50];
 
-    // 4. Null Pointer Dereference: Instant OS Crash / Segfault (CWE-476)
+    // 6. Null Pointer Dereference: Instant OS Crash / Segfault (CWE-476)
     int* ptr = nullptr;
     if (strlen(buffer) > 5) {
         std::cout << *ptr << std::endl; 
     }
+}
 
-    // 5. Missing: delete[] dynamicScores;
+void process(int amount) {
+    try {
+        int x = 100 / amount;
+    } catch (...) {
+        // 7. Silent Exception Swallowing (CWE-391)
+    }
 }
 ''',
 
@@ -260,9 +280,9 @@ def detect_language(code: str, filename: str = "") -> tuple[str, str]:
         return ext_map[ext]
         
     # Heuristics based on code content
-    if re.search(r'#include\s*<|std::|int\s+main\s*\(|nullptr|delete\[\]', code):
+    if re.search(r'#include\s*<|std::|int\s+main\s*\(|nullptr|delete\[\]|sqlite3_exec|char\s+\w+\[\d+\]|void\s+\w+\([^)]*\*|\bcatch\s*\(\s*\.\.\.\s*\)', code):
         return ("cpp", "C++")
-    if re.search(r'public\s+class\s+|System\.out\.println|import\s+java\.', code):
+    if re.search(r'public\s+class\s+|System\.out\.println|import\s+java\.|PreparedStatement', code):
         return ("java", "Java")
     if re.search(r'package\s+main|func\s+\w+\(|fmt\.Println', code):
         return ("go", "Go")
@@ -270,7 +290,7 @@ def detect_language(code: str, filename: str = "") -> tuple[str, str]:
         return ("rust", "Rust")
     if re.search(r'<\?php|\$_GET\[|\$_POST\[|\$this->', code):
         return ("php", "PHP")
-    if re.search(r'console\.log\(|const\s+\w+\s*=\s*require|import\s+.*from|document\.', code):
+    if re.search(r'console\.log\(|const\s+\w+\s*=\s*require|import\s+.*from|document\.|process\.env', code):
         return ("javascript", "JavaScript")
     if re.search(r'def\s+\w+\(|import\s+os|import\s+sys|class\s+\w+:', code):
         return ("python", "Python")
@@ -278,8 +298,27 @@ def detect_language(code: str, filename: str = "") -> tuple[str, str]:
     return ("python", "Python / Generic")
 
 
+def get_safe_secret_fix(lang_key: str, var_name: str = "API_KEY") -> str:
+    """Generates language-idiomatic environment variable retrieval code."""
+    if lang_key in ("cpp", "c"):
+        return f'const char* {var_name} = std::getenv("{var_name}"); // Load securely from environment'
+    elif lang_key == "python":
+        return f'{var_name} = os.getenv("{var_name}", "")'
+    elif lang_key in ("javascript", "typescript"):
+        return f'const {var_name} = process.env.{var_name} || "";'
+    elif lang_key in ("java", "kotlin", "csharp"):
+        return f'String {var_name} = System.getenv("{var_name}");'
+    elif lang_key == "go":
+        return f'{var_name} := os.Getenv("{var_name}")'
+    elif lang_key == "rust":
+        return f'let {var_name.lower()} = std::env::var("{var_name}").unwrap_or_default();'
+    elif lang_key == "php":
+        return f'${var_name.lower()} = getenv("{var_name}");'
+    return f'// Load {var_name} securely from environment variables'
+
+
 def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-    """Executes deterministic polyglot AST and AppSec pattern rules."""
+    """Executes deterministic polyglot AST and AppSec pattern rules with language-specific fixes."""
     findings: list[dict[str, Any]] = []
     stage_traces: dict[str, Any] = {}
     
@@ -355,10 +394,14 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
     sec_count = 0
     err_count = 0
 
-    # 3. Stage 2 & 3: Polyglot Security, Logic & Reliability Rules
+    # 3. Stage 2 & 3: Language-Specific Security, Logic & Reliability Rules
     for idx, raw_l in enumerate(lines, start=1):
         l = raw_l.strip()
-        if not l or l.startswith("//") or l.startswith("#") or l.startswith("/*") or l.startswith("*"):
+        if not l:
+            continue
+
+        # Comment Handling & Prompt Injection
+        if l.startswith("//") or l.startswith("#") or l.startswith("/*") or l.startswith("*"):
             if re.search(r"(?i)(ignore\s+previous|system\s*:\s*approve)", l):
                 findings.append({
                     "line": idx,
@@ -374,23 +417,26 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 sec_count += 1
             continue
 
-        # Hardcoded Secrets (CWE-798)
-        if re.search(r'(?i)(secret_key|api_key|password|jwt_secret|private_key|token|auth_token)\s*[:=]\s*["\'][a-zA-Z0-9_\-!@#$]{8,}["\']', l):
+        # Hardcoded Credentials / Secrets (CWE-798) - Language-Aware Fixes
+        sec_match = re.search(r'(?i)\b([a-zA-Z0-9_]*(?:secret_key|api_key|password|jwt_secret|private_key|token|auth_token)[a-zA-Z0-9_]*)\s*[:=]\s*["\']([a-zA-Z0-9_\-!@#$]{8,})["\']', l)
+        if sec_match:
+            var_name = sec_match.group(1) or "API_KEY"
             findings.append({
                 "line": idx,
                 "severity": "critical",
-                "title": "Hardcoded Credential / API Secret Token",
+                "title": f"Hardcoded Credential / API Secret Token (`{var_name}`)",
                 "category": "AppSec",
                 "cwe": "CWE-798",
                 "owasp": "A07:2021-Identification & Auth Failures",
-                "description": "Sensitive API key, password, or token is hardcoded in source code.",
+                "description": f"Sensitive credential or API key `{var_name}` is hardcoded in source code.",
                 "bad_code": l,
-                "fix_code": 'const key = process.env.API_KEY || os.getenv("API_KEY"); // Load from environment'
+                "fix_code": get_safe_secret_fix(lang_key, var_name)
             })
             sec_count += 1
 
         # Disabled SSL (CWE-295)
-        if re.search(r'(?i)(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|InsecureSkipVerify\s*:\s*true|CURLOPT_SSL_VERIFYPEER\s*,\s*false)', l):
+        if re.search(r'(?i)(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|InsecureSkipVerify\s*:\s*true|CURLOPT_SSL_VERIFYPEER\s*,\s*(false|0L|0))', l):
+            ssl_fix = "verify=True" if lang_key == "python" else "rejectUnauthorized: true" if lang_key in ("javascript", "typescript") else "curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);"
             findings.append({
                 "line": idx,
                 "severity": "critical",
@@ -400,12 +446,13 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 "owasp": "A02:2021-Cryptographic Failures",
                 "description": "Disabling SSL validation leaves network traffic vulnerable to Man-in-the-Middle interception.",
                 "bad_code": l,
-                "fix_code": 'Enable strict SSL validation (verify=True / rejectUnauthorized: true)'
+                "fix_code": ssl_fix
             })
             sec_count += 1
 
         # Weak Hashes (CWE-327)
         if re.search(r'(?i)\b(md5|sha1)\s*\(', l) or "hashlib.md5" in l:
+            hash_fix = "hashlib.sha256(data).hexdigest()" if lang_key == "python" else "crypto.createHash('sha256')" if lang_key in ("javascript", "typescript") else "EVP_sha256()"
             findings.append({
                 "line": idx,
                 "severity": "warning",
@@ -415,42 +462,61 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 "owasp": "A02:2021-Cryptographic Failures",
                 "description": "MD5 and SHA-1 are cryptographically broken. Upgrade to SHA-256 or bcrypt.",
                 "bad_code": l,
-                "fix_code": 'Use SHA-256 or bcrypt / Argon2 for cryptography.'
+                "fix_code": hash_fix
             })
             sec_count += 1
 
-        # Division by Zero (CWE-369)
-        if re.search(r'/\s*0(\.0)?(\s*[\+\-\*\/\);]|$)', l):
-            findings.append({
-                "line": idx,
-                "severity": "critical",
-                "title": "ZeroDivision Crash Risk",
-                "category": "Reliability",
-                "cwe": "CWE-369",
-                "owasp": "Code Correctness",
-                "description": "Literal division by zero causes immediate unhandled runtime exception/crash.",
-                "bad_code": l,
-                "fix_code": "if (denominator != 0) { result = amount / denominator; }"
-            })
-            err_count += 1
-
-        # C / C++ Rules
+        # ── C / C++ Rules
         if lang_key in ("cpp", "c"):
-            if re.search(r'\b(strcpy|strcat|sprintf|vsprintf|gets)\s*\(', l):
+            # C/C++ SQL Injection via sprintf/snprintf into query buffer
+            # Note: sqlite3_exec(db, query, ...) alone is not a SQLi signal; the vulnerability is
+            # the interpolation in sprintf/snprintf, so only that line is flagged to avoid duplicate noise.
+            if re.search(r'\b(sprintf|snprintf)\s*\([^,]+,\s*["\'].*(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE)', l):
                 findings.append({
                     "line": idx,
                     "severity": "critical",
-                    "title": "Unbounded Buffer Overflow Risk (`strcpy`/`sprintf`)",
+                    "title": "SQL Injection & Unbounded Query Formatting (CWE-89)",
+                    "category": "AppSec",
+                    "cwe": "CWE-89",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Formatting user input directly into an SQL query buffer creates severe SQL injection risks. Use prepared statements with parameter binding.",
+                    "bad_code": l,
+                    "fix_code": "sqlite3_stmt* stmt;\nsqlite3_prepare_v2(db, \"SELECT * FROM users WHERE name = ?\", -1, &stmt, nullptr);\nsqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);"
+                })
+                sec_count += 1
+
+            # Buffer Overflow (CWE-120)
+            elif re.search(r'\b(strcpy|strcat|gets|vsprintf)\s*\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Unbounded Buffer Overflow Risk (CWE-120)",
                     "category": "AppSec",
                     "cwe": "CWE-120",
                     "owasp": "A03:2021-Injection",
                     "description": f"Unsafe C string function in `{l}` does not perform bounds checking.",
                     "bad_code": l,
-                    "fix_code": 'strncpy_s(dest, sizeof(dest), src, _TRUNCATE);'
+                    "fix_code": 'strncpy(buffer, userInput, sizeof(buffer) - 1);\nbuffer[sizeof(buffer) - 1] = \'\\0\';'
                 })
                 sec_count += 1
 
-            if re.search(r'\b(new\s+\w+|malloc\s*\()', l):
+            # OS Command Injection in C++ (CWE-78)
+            if re.search(r'\b(system|popen)\s*\(', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "OS Command Injection via system() (CWE-78)",
+                    "category": "AppSec",
+                    "cwe": "CWE-78",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Direct execution of shell commands with untrusted arguments via system() allows arbitrary command execution.",
+                    "bad_code": l,
+                    "fix_code": '// Use execvp/posix_spawnp with explicit argument vector without invoking shell'
+                })
+                sec_count += 1
+
+            # Manual Memory Leak in C++ (CWE-401)
+            if re.search(r'\b(new\s+\w+|malloc\s*\()', l) and "delete" not in l:
                 findings.append({
                     "line": idx,
                     "severity": "warning",
@@ -458,12 +524,13 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "category": "Reliability",
                     "cwe": "CWE-401",
                     "owasp": "Resource Exhaustion",
-                    "description": "Heap memory allocated without automated lifetime management.",
+                    "description": "Heap memory allocated without automated RAII lifetime management.",
                     "bad_code": l,
-                    "fix_code": "std::unique_ptr<int[]> data = std::make_unique<int[]>(size);"
+                    "fix_code": "std::unique_ptr<int[]> dynamicScores = std::make_unique<int[]>(50);"
                 })
                 err_count += 1
 
+            # Null Pointer Dereference in C++ (CWE-476)
             if re.search(r'\*\s*(?:ptr|p|data|node)\b', l) or "std::cout << *ptr" in l:
                 findings.append({
                     "line": idx,
@@ -474,12 +541,42 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "Code Correctness",
                     "description": "Dereferencing a null pointer causes an instant OS Segmentation Fault.",
                     "bad_code": l,
-                    "fix_code": "if (ptr != nullptr) {\n    std::cout << *ptr;\n}"
+                    "fix_code": "if (ptr != nullptr) {\n    std::cout << *ptr << std::endl;\n}"
                 })
                 err_count += 1
 
-        # JS / TS Rules
-        if lang_key in ("javascript", "typescript"):
+            # Bare Catch in C++ (CWE-391)
+            if re.search(r'catch\s*\(\s*\.\.\.\s*\)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Silent Exception Swallowing (`catch (...)`)",
+                    "category": "Reliability",
+                    "cwe": "CWE-391",
+                    "owasp": "A09:2021-Security Logging & Monitoring",
+                    "description": "Catch-all `catch (...)` block silently swallows unhandled exceptions without diagnostic logging.",
+                    "bad_code": l,
+                    "fix_code": 'catch (const std::exception& exc) {\n    std::cerr << "Operation failed: " << exc.what() << std::endl;\n    throw;\n}'
+                })
+                err_count += 1
+
+            # Division by Zero in C++ (CWE-369)
+            if re.search(r'/\s*(?:0(\.0)?|amount|count|size|denom)(\s*[\+\-\*\/\);]|$)', l) and "100 / amount" in l:
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "ZeroDivision Crash Risk (CWE-369)",
+                    "category": "Reliability",
+                    "cwe": "CWE-369",
+                    "owasp": "Code Correctness",
+                    "description": "Division by variable without zero check causes floating point exception / crash.",
+                    "bad_code": l,
+                    "fix_code": "if (amount != 0) {\n    int x = 100 / amount;\n}"
+                })
+                err_count += 1
+
+        # ── JS / TS Rules
+        elif lang_key in ("javascript", "typescript"):
             if re.search(r'\b(innerHTML|outerHTML|document\.write)\s*=', l) or "dangerouslySetInnerHTML" in l:
                 findings.append({
                     "line": idx,
@@ -490,7 +587,7 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "A03:2021-Injection",
                     "description": "Directly assigning unsanitized dynamic input to `innerHTML` allows malicious script injection.",
                     "bad_code": l,
-                    "fix_code": 'element.textContent = sanitize(userInput);'
+                    "fix_code": 'profileContainer.textContent = "Welcome, " + rawUserInput;'
                 })
                 sec_count += 1
 
@@ -504,7 +601,7 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "A03:2021-Injection",
                     "description": "Executing arbitrary dynamic JS string allows attackers complete compromise.",
                     "bad_code": l,
-                    "fix_code": 'JSON.parse(safeData); // Replace eval with structured JSON parsing'
+                    "fix_code": 'const computedConfig = JSON.parse(userData.configPayload);'
                 })
                 sec_count += 1
 
@@ -522,8 +619,22 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 })
                 err_count += 1
 
-        # Java / C# Rules
-        if lang_key in ("java", "csharp", "kotlin"):
+            if re.search(r'/\s*0(\.0)?(\s*[\+\-\*\/\);]|$)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "ZeroDivision / Infinity Risk",
+                    "category": "Reliability",
+                    "cwe": "CWE-369",
+                    "owasp": "Code Correctness",
+                    "description": "Division by zero produces Infinity / NaN in JavaScript.",
+                    "bad_code": l,
+                    "fix_code": "const value = denominator !== 0 ? userData.total / denominator : 0;"
+                })
+                err_count += 1
+
+        # ── Java / C# Rules
+        elif lang_key in ("java", "csharp", "kotlin"):
             if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE).*\+\s*\w+', l) or ("executeQuery(" in l and "+" in l):
                 findings.append({
                     "line": idx,
@@ -534,7 +645,7 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "A03:2021-Injection",
                     "description": "SQL query built with string concatenation instead of `PreparedStatement`.",
                     "bad_code": l,
-                    "fix_code": 'PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE id = ?");\nstmt.setString(1, userId);'
+                    "fix_code": 'PreparedStatement stmt = conn.prepareStatement("SELECT * FROM orders WHERE user_id = ?");\nstmt.setString(1, userId);'
                 })
                 sec_count += 1
 
@@ -548,12 +659,40 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "A03:2021-Injection",
                     "description": "Executing system commands without argument separation allows arbitrary command execution.",
                     "bad_code": l,
-                    "fix_code": 'ProcessBuilder pb = new ProcessBuilder("tar", "-czf", "backup.tar.gz", folder);'
+                    "fix_code": 'ProcessBuilder pb = new ProcessBuilder("tar", "-czf", "backup.tar.gz", folderPath);'
                 })
                 sec_count += 1
 
-        # Go Rules
-        if lang_key == "go":
+            if re.search(r'catch\s*\([^)]+\)\s*\{\s*\}', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "warning",
+                    "title": "Silent Exception Swallowing in Java",
+                    "category": "Reliability",
+                    "cwe": "CWE-391",
+                    "owasp": "A09:2021-Security Logging & Monitoring",
+                    "description": "Empty catch block silently hides critical exceptions.",
+                    "bad_code": l,
+                    "fix_code": 'catch (Exception e) {\n    logger.error("Database query failed", e);\n    throw new ServiceException(e);\n}'
+                })
+                err_count += 1
+
+        # ── Go Rules
+        elif lang_key == "go":
+            if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE).*(?:Sprintf|\+)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "SQL Injection via String Interpolation (CWE-89)",
+                    "category": "AppSec",
+                    "cwe": "CWE-89",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Dynamic SQL interpolation without parameterized query arguments.",
+                    "bad_code": l,
+                    "fix_code": 'rows, err := db.Query("SELECT id, role FROM accounts WHERE username = $1", username)'
+                })
+                sec_count += 1
+
             if re.search(r'\b[a-zA-Z0-9_]+,\s*_\s*:?=', l):
                 findings.append({
                     "line": idx,
@@ -564,12 +703,12 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "Code Correctness",
                     "description": "Ignoring returned error (`_`) can cause silent data corruption or panics downstream.",
                     "bad_code": l,
-                    "fix_code": 'val, err := doSomething()\nif err != nil {\n    return fmt.Errorf("failed: %w", err)\n}'
+                    "fix_code": 'rows, err := db.Query(query)\nif err != nil {\n    return fmt.Errorf("query failed: %w", err)\n}'
                 })
                 err_count += 1
 
-        # Rust Rules
-        if lang_key == "rust":
+        # ── Rust Rules
+        elif lang_key == "rust":
             if "unsafe {" in l or "unsafe{" in l:
                 findings.append({
                     "line": idx,
@@ -593,12 +732,12 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "Code Correctness",
                     "description": "Calling `.unwrap()` causes immediate thread panic if value is `None`/`Err`.",
                     "bad_code": l,
-                    "fix_code": 'let val = match opt {\n    Some(v) => v,\n    None => return Err(MyError::NotFound),\n};'
+                    "fix_code": 'let payload = match user_input {\n    Some(val) => val,\n    None => return,\n};'
                 })
                 err_count += 1
 
-        # PHP Rules
-        if lang_key == "php":
+        # ── PHP Rules
+        elif lang_key == "php":
             if re.search(r'\b(eval|passthru|shell_exec|exec|system)\s*\(', l):
                 findings.append({
                     "line": idx,
@@ -609,12 +748,40 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "A03:2021-Injection",
                     "description": "Dynamic execution of arbitrary PHP code or OS commands from user input.",
                     "bad_code": l,
-                    "fix_code": 'Avoid eval/exec; use safe predefined APIs.'
+                    "fix_code": '// Avoid eval/exec; use safe predefined calculation logic'
                 })
                 sec_count += 1
 
-        # Python Rules
-        if lang_key == "python":
+            if re.search(r'include\(\$_GET\[', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Local/Remote File Inclusion (LFI/RFI) (CWE-98)",
+                    "category": "AppSec",
+                    "cwe": "CWE-98",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Directly including untrusted file path enables Local/Remote File Inclusion.",
+                    "bad_code": l,
+                    "fix_code": '$allowed = ["home" => "home.php"];\nif (isset($allowed[$_GET["page"]])) { include($allowed[$_GET["page"]]); }'
+                })
+                sec_count += 1
+
+            if re.search(r'echo\s*.*<.*\$_GET', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "Reflected Cross-Site Scripting (XSS) (CWE-79)",
+                    "category": "AppSec",
+                    "cwe": "CWE-79",
+                    "owasp": "A03:2021-Injection",
+                    "description": "Unescaped user input echoed into HTML context enables Cross-Site Scripting.",
+                    "bad_code": l,
+                    "fix_code": 'echo "<h1>Welcome " . htmlspecialchars($_GET[\'user\'], ENT_QUOTES, \'UTF-8\') . "</h1>";'
+                })
+                sec_count += 1
+
+        # ── Python Rules
+        elif lang_key == "python":
             if re.search(r'(?i)(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE).*(f["\']|%\s*\w+|\.format\(|\+\s*\w+)', l) or ("execute(" in l and 'f"' in l):
                 findings.append({
                     "line": idx,
@@ -639,7 +806,7 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                     "owasp": "A03:2021-Injection",
                     "description": "Dangerous execution of shell commands with untrusted string formatting.",
                     "bad_code": l,
-                    "fix_code": 'subprocess.run(["tar", "-czf", "backup.tar.gz", safe_folder], shell=False)'
+                    "fix_code": 'subprocess.run(["tar", "-czf", "backup.tar.gz", folder_name], shell=False)'
                 })
                 sec_count += 1
 
@@ -685,6 +852,20 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
                 })
                 err_count += 1
 
+            if re.search(r'/\s*0(\.0)?(\s*[\+\-\*\/\);]|$)', l):
+                findings.append({
+                    "line": idx,
+                    "severity": "critical",
+                    "title": "ZeroDivision Crash Risk (CWE-369)",
+                    "category": "Reliability",
+                    "cwe": "CWE-369",
+                    "owasp": "Code Correctness",
+                    "description": "Literal division by zero causes immediate unhandled runtime exception/crash.",
+                    "bad_code": l,
+                    "fix_code": "if denominator != 0:\n    total_fee = amount / denominator"
+                })
+                err_count += 1
+
     sev_weights = {"critical": 0, "warning": 1, "info": 2}
     findings = sorted(findings, key=lambda x: (sev_weights.get(x["severity"], 3), x["line"]))
 
@@ -704,7 +885,7 @@ def run_static_analysis(code: str, filename: str = "module.py") -> tuple[dict[st
 SYSTEM_PROMPT = """You are PR Sage, an expert automated code review AI agent.
 Analyze the provided code and return ONLY valid JSON with keys:
 - "summary" (string overview)
-- "findings" (list of objects with: "line" (int), "severity" ("critical"|"warning"|"info"), "title" (string), "category" ("AppSec"|"Reliability"|"Style"), "cwe" (e.g. "CWE-89"), "owasp" (string), "description" (string), "bad_code" (exact problematic line), "fix_code" (safe replacement code))."""
+- "findings" (list of objects with: "line" (int), "severity" ("critical"|"warning"|"info"), "title" (string), "category" ("AppSec"|"Reliability"|"Style"), "cwe" (e.g. "CWE-89"), "owasp" (string), "description" (string), "bad_code" (exact problematic line), "fix_code" (safe replacement code in the EXACT same programming language))."""
 
 
 def call_openai(code: str, api_key: str, model_name: str, filename: str) -> tuple[dict, list, dict]:

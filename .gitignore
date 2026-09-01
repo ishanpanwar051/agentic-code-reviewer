@@ -56,3 +56,9 @@ eval/reports/
 logs/
 *.log
 powershell.bat
+
+# Runtime SQLite database (review history, must never be committed)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
