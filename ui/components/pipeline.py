@@ -18,27 +18,27 @@ def render_pipeline_bar(
     dot3 = "step-dot-warn" if warn_count > 0 else "step-dot-ok"
     dot4 = "step-dot-ok"
 
-    pipeline_html = f"""
-    <div class="pipeline-bar">
-        <div class="pipeline-step">
-            <span class="step-dot {dot1}"></span>
-            <span><b>1. Understand:</b> AST Walk ({loc_count} LOC)</span>
-        </div>
-        <div class="pipeline-arrow">➔</div>
-        <div class="pipeline-step">
-            <span class="step-dot {dot2}"></span>
-            <span><b>2. Security:</b> {crit_count} Vulnerabilities (CWE/OWASP)</span>
-        </div>
-        <div class="pipeline-arrow">➔</div>
-        <div class="pipeline-step">
-            <span class="step-dot {dot3}"></span>
-            <span><b>3. Error Handling:</b> {warn_count} Crash Risks</span>
-        </div>
-        <div class="pipeline-arrow">➔</div>
-        <div class="pipeline-step">
-            <span class="step-dot {dot4}"></span>
-            <span><b>4. Review & Guardrails:</b> {total_findings} Actionable Issues</span>
-        </div>
-    </div>
-    """
+    pipeline_html = (
+        '<div class="pipeline-bar">'
+        '<div class="pipeline-step">'
+        f'<span class="step-dot {dot1}"></span>'
+        f'<span><b>1. Understand:</b> AST Walk ({loc_count} LOC)</span>'
+        '</div>'
+        '<div class="pipeline-arrow">➔</div>'
+        '<div class="pipeline-step">'
+        f'<span class="step-dot {dot2}"></span>'
+        f'<span><b>2. Security:</b> {crit_count} Vulnerabilities (CWE/OWASP)</span>'
+        '</div>'
+        '<div class="pipeline-arrow">➔</div>'
+        '<div class="pipeline-step">'
+        f'<span class="step-dot {dot3}"></span>'
+        f'<span><b>3. Error Handling:</b> {warn_count} Crash Risks</span>'
+        '</div>'
+        '<div class="pipeline-arrow">➔</div>'
+        '<div class="pipeline-step">'
+        f'<span class="step-dot {dot4}"></span>'
+        f'<span><b>4. Review & Guardrails:</b> {total_findings} Actionable Issues</span>'
+        '</div>'
+        '</div>'
+    )
     st.markdown(pipeline_html, unsafe_allow_html=True)
